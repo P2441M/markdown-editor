@@ -1,0 +1,6 @@
+{
+  "name": "Live Markdown Editor",
+  "description": "A real-time Markdown editor with live preview.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

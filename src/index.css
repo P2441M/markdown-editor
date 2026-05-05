@@ -1,0 +1,165 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+@custom-variant dark (&:where(.dark-mode, .dark-mode *));
+
+@media print {
+  @page {
+    margin: 15mm !important;
+    size: auto;
+  }
+
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background-color: white !important;
+    color: black !important;
+    height: auto !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html.dark-mode, 
+  body.dark-mode {
+    background-color: #121212 !important;
+    color: #d4d4d4 !important;
+  }
+
+  #preview-content {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    background-color: transparent !important;
+  }
+
+  /* Force background colors to print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .overflow-x-auto,
+  .overflow-y-auto {
+    overflow: visible !important;
+  }
+
+  table {
+    width: 100% !important;
+    max-width: 100% !important;
+    table-layout: auto !important;
+    page-break-inside: auto !important;
+    border-collapse: collapse !important;
+  }
+
+  table td,
+  table th {
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    page-break-inside: avoid !important;
+  }
+
+  .katex-display {
+    page-break-inside: avoid !important;
+    margin: 1em 0 !important;
+  }
+
+  [class*="bg-"] {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* Syntax Highlighting overrides for Tailwind Typography */
+.prose pre code .hljs-doctag,
+.prose pre code .hljs-keyword,
+.prose pre code .hljs-meta .hljs-keyword,
+.prose pre code .hljs-template-tag,
+.prose pre code .hljs-template-variable,
+.prose pre code .hljs-type,
+.prose pre code .hljs-variable.language_ { color: #ff7b72 !important; }
+
+.prose pre code .hljs-title,
+.prose pre code .hljs-title.class_,
+.prose pre code .hljs-title.class_.inherited__,
+.prose pre code .hljs-title.function_ { color: #d2a8ff !important; }
+
+.prose pre code .hljs-attr,
+.prose pre code .hljs-attribute,
+.prose pre code .hljs-literal,
+.prose pre code .hljs-meta,
+.prose pre code .hljs-number,
+.prose pre code .hljs-operator,
+.prose pre code .hljs-variable,
+.prose pre code .hljs-selector-attr,
+.prose pre code .hljs-selector-class,
+.prose pre code .hljs-selector-id { color: #79c0ff !important; }
+
+.prose pre code .hljs-regexp,
+.prose pre code .hljs-string,
+.prose pre code .hljs-meta .hljs-string { color: #a5d6ff !important; }
+
+.prose pre code .hljs-built_in,
+.prose pre code .hljs-symbol { color: #ffa657 !important; }
+
+.prose pre code .hljs-comment,
+.prose pre code .hljs-code,
+.prose pre code .hljs-formula { color: #8b949e !important; }
+
+.prose pre code .hljs-name,
+.prose pre code .hljs-quote,
+.prose pre code .hljs-selector-tag,
+.prose pre code .hljs-selector-pseudo { color: #7ee787 !important; }
+
+.prose pre code .hljs-subst { color: #c9d1d9 !important; }
+.prose pre code .hljs-section { color: #1f6feb !important; font-weight: bold !important; }
+.prose pre code .hljs-bullet { color: #f2cc60 !important; }
+.prose pre code .hljs-emphasis { color: #c9d1d9 !important; font-style: italic !important; }
+.prose pre code .hljs-strong { color: #c9d1d9 !important; font-weight: bold !important; }
+.prose pre code .hljs-addition { color: #aff5b4 !important; background-color: #033a16 !important; }
+.prose pre code .hljs-deletion { color: #ffdcd7 !important; background-color: #67060c !important; }
+.prose pre {
+  padding: 0 !important;
+  background-color: transparent !important;
+}
+
+.prose pre code {
+  display: block;
+  padding: 1em !important;
+  background-color: #0d1117 !important;
+  color: #c9d1d9 !important;
+  border: 1px solid #30363d !important;
+  border-radius: 0.5rem !important;
+  overflow-x: auto !important;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+
+.prose pre code * {
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 3px;
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.3);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.8);
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.5);
+}
