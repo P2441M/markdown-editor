@@ -42,7 +42,12 @@ const remarkAddLineNumbers = () => {
 const preprocessLatex = (text: string) => {
   if (!text) return '';
   return text
-    .replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `$$\n${math}\n$$`)
+    .replace(/\\\[([\s\S]*?)\\\]/g, (match, math) => {
+      if (math.includes('\n')) {
+        return `$$${math}$$`;
+      }
+      return `$\\displaystyle ${math}$`;
+    })
     .replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => `$${math}$`);
 };
 
