@@ -4,42 +4,52 @@
 
 @media print {
   @page {
-    margin: 15mm !important;
+    margin: 0 !important;
     size: auto;
   }
 
   html, body {
     margin: 0 !important;
     padding: 0 !important;
-    background-color: white !important;
-    color: black !important;
-    height: auto !important;
+    min-height: 100% !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+    /* 关键：确保背景溢出逻辑一致 */
+    height: auto !important;
   }
 
-  html.dark-mode, 
+  /* 核心：无论内容多少，html 必须背景一致，防止底部露白 */
+  /* 如果 body 有 .dark-mode，强制 html 同色 */
+  html { background-color: white !important; }
+  html:has(body.dark-mode), html.dark-mode { background-color: #121212 !important; }
+
+  body:not(.dark-mode) {
+    background-color: white !important;
+    color: black !important;
+  }
+
   body.dark-mode {
     background-color: #121212 !important;
     color: #d4d4d4 !important;
   }
 
+  /* 针对预览内容的打印优化 */
   #preview-content {
-    padding: 0 !important;
+    padding: 20mm !important;
     margin: 0 !important;
     width: 100% !important;
-    max-width: none !important;
+    box-sizing: border-box !important;
     background-color: transparent !important;
+    /* 允许装饰背景在分页处克隆 */
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
   }
 
-  /* Force background colors to print */
-  * {
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
-  .no-print {
-    display: none !important;
+  body, html, .prose {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
   .overflow-x-auto,
@@ -162,4 +172,38 @@
 }
 .dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(156, 163, 175, 0.5);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Fix KaTeX math visibility in light mode and dark mode */
+.katex {
+  color: inherit !important;
+}
+
+.prose:not(.prose-invert) .katex {
+  color: #1f2937 !important;
+}
+
+.prose.prose-invert .katex {
+  color: #d4d4d4 !important;
+}
+
+/* Ensure math components are visible */
+.katex .mathdefault,
+.katex .mord,
+.katex .mbin,
+.katex .mrel,
+.katex .mopen,
+.katex .mclose,
+.katex .mpunct,
+.katex .minner,
+.katex .mtext {
+  color: inherit !important;
 }

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect, useMemo, useDeferredValue, useTransition } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useDeferredValue, startTransition, memo, useCallback } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -17,19 +17,9 @@ import rehypeHighlight from 'rehype-highlight';
 import { useReactToPrint } from 'react-to-print';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { FileDown, Type, FolderOpen, Sun, Moon, Monitor, Table, Wand2, X, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Info, CheckCircle2, AlertTriangle, XCircle, Sigma, ListCollapse, FileText, Download, Plus } from 'lucide-react';
+import { FileDown, Type, FolderOpen, Sun, Moon, Monitor, Table, Wand2, X, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Info, CheckCircle2, AlertTriangle, XCircle, Sigma, ListCollapse, FileText, Download, Plus, Keyboard, Eye, Code } from 'lucide-react';
 import { LATEX_SYMBOLS } from './utils/latexSymbols';
-
-const LineNumberList = React.memo(({ content }: { content: string }) => {
-  const lineCount = content.split('\n').length;
-  return (
-    <>
-      {Array.from({ length: Math.max(50, lineCount + 10) }).map((_, i) => (
-        <div key={i} className="h-[1.6rem] flex items-center justify-center">{i + 1}</div>
-      ))}
-    </>
-  );
-});
+import { VirtualKeyboard } from './components/VirtualKeyboard';
 
 const remarkAddLineNumbers = () => {
   return (tree: any) => {
@@ -48,82 +38,212 @@ const remarkAddLineNumbers = () => {
   };
 };
 
+
+const preprocessLatex = (text: string) => {
+  if (!text) return '';
+  return text
+    .replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => `$$\n${math}\n$$`)
+    .replace(/\\\(([\s\S]*?)\\\)/g, (_, math) => `$${math}$`);
+};
+
 const DEFAULT_MARKDOWN = `# Welcome to Live Markdown Editor!
 
-Start typing on the left, and see your changes rendered on the right.
+**Live Markdown Editor** is a powerful, real-time editor with deep support for academic writing, math formulas, and Luogu-flavored extensions.
 
-## Features
-* **Real-time preview**
-* GitHub Flavored Markdown support (tables, task lists, etc.)
-* **LaTeX Math** support (Inline $E=mc^2$ and block)
-* Scroll Sync
+## Core Features
 
-### Math Equations
+- **Real-Time Preview**: No lag between your thoughts and the screen.
+- **Scroll Sync**: The preview follows your exact cursor position.
+- **Visual Table Editor**: Quickly insert and manage Markdown tables visually.
+- **Custom Details**: Support for standard \`details\` and Luogu-flavored \`:::info\` callouts.
+- **Full LaTeX Math**: Supports all major math rendering.
 
-Here is an inline equation: $e^{i\\pi} + 1 = 0$
+---
 
-And a block equation:
+## 🧮 LaTeX Math Equations
 
+Math rendering is built on top of **KaTeX**. Use single \`$\` for inline math, and double \`$$\` or \`\\[ \\]\` for block math. We have a robust symbol palette accessible from the top toolbar ("$\\sum$").
+
+### Common Operations
+Fractions, roots, and combinations:
 $$
-\\int_0^\\infty e^{-x^2} dx = \\frac{\\sqrt{\\pi}}{2}
+x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a} \\quad \\binom{n}{k} = \\frac{n!}{k!(n-k)!}
 $$
 
-### Task List
+### Big Operators & Calculus
+Integrals and summations are fully supported:
+$$
+\\int_{0}^{\\infty} x^n e^{-x} dx = n! \\quad \\sum_{i=1}^{n} i^3 = \\left(\\frac{n(n+1)}{2}\\right)^2
+$$
+
+### Matrices and Arrays
+You can easily create aligned systems:
+$$
+\\begin{pmatrix}
+\\alpha & \\beta \\\\
+\\gamma & \\delta
+\\end{pmatrix}
+\\times
+\\begin{pmatrix}
+1 & 0 \\\\
+0 & 1
+\\end{pmatrix}
+=
+\\begin{pmatrix}
+\\alpha & \\beta \\\\
+\\gamma & \\delta
+\\end{pmatrix}
+$$
+
+---
+
+## 📊 Visual Table Editor
+
+Our editor auto-formats tables when you click "Format Table" in the toolbar. Try editing this table or clicking its hover action:
+
+| Function | Description | Status |
+| :--- | :---: | ---: |
+| \`formatTable()\` | Auto-aligns raw markdown pipes and dashes | ✅ Complete |
+| \`openTableEditor()\` | Opens a visual grid for editing headers/rows | ✅ Complete |
+| \`save()\` | Serializes back to perfectly padded Markdown | ✅ Complete |
+
+---
+
+## 💡 Callouts and Callouts (Luogu Syntax)
+
+You can use standard \`<details>\` tags or use **Luogu's container directives** for neat callouts. Click the Convert button on the toolbar to transform them automatically!
+
+:::info[Note]
+This is an informational callout block. Useful for hints and tips!
+:::
+
+:::success[Success]
+You successfully learned how to use the editor!
+:::
+
+:::warning[Warning]
+Always remember to save your snippets!
+:::
+
+:::error[Danger]
+This action is irreversible.
+:::
+
+---
+
+## 📝 General Markdown
+
+### Task Lists
 - [x] Create project
 - [x] Implement editor
-- [x] Add LaTeX support
-- [ ] Write a novel
+- [x] Add extended LaTeX support
+- [ ] Become a Markdown master
 
-### Example Code Block
-\`\`\`javascript
-const greeting = "Hello, world!";
-console.log(greeting);
+### Code Blocks
+We support automatic syntax highlighting:
+
+\`\`\`typescript
+interface User {
+  id: string;
+  name: string;
+}
+
+const greet = (user: User): string => {
+  return \`Hello, \${user.name}!\`;
+};
 \`\`\`
 
-> "Simplicity is the ultimate sophistication." - Leonardo da Vinci
-
-| Markdown | Less | Pretty |
-| --- | --- | --- |
-| *Still* | \`renders\` | **nicely** |
-| 1 | 2 | 3 |
+> *"Simplicity is the ultimate sophistication."* — Leonardo da Vinci
 
 Enjoy writing!
 `;
 
-const STORAGE_KEY = 'md_editor_persistence';
+const escapeHtml = (unsafe: string) => {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
+
+const LineNumberComponent = memo(({ length }: { length: number }) => {
+  const html = useMemo(() => {
+    let str = '';
+    for (let i = 1; i <= length; i++) {
+        str += `<div>${i}</div>`;
+    }
+    return str;
+  }, [length]);
+  return <div dangerouslySetInnerHTML={{ __html: html }} className="contents" />;
+});
+
+const MirrorComponent = memo(({ lines }: { lines: string[] }) => {
+  const html = useMemo(() => {
+    let str = '';
+    for (let i = 0; i < lines.length; i++) {
+      const line = escapeHtml(lines[i]) || ' ';
+      str += `<div data-mirror-line="${i + 1}" class="min-h-[1.6rem]">${line}</div>`;
+    }
+    return str;
+  }, [lines]);
+  return <div dangerouslySetInnerHTML={{ __html: html }} className="contents" />;
+});
+
+const EditorTextarea = memo(({ content, onChange, onScroll, onKeyDown, isDark, editorRef, showKeyboard }: any) => {
+  const contentRef = useRef(content);
+  useEffect(() => {
+    if (contentRef.current !== content) {
+      contentRef.current = content;
+      if (editorRef.current && editorRef.current.value !== content) {
+        editorRef.current.value = content;
+      }
+    }
+  }, [content, editorRef]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    contentRef.current = val;
+    startTransition(() => {
+      onChange(val);
+    });
+  };
+
+  return (
+    <textarea
+      ref={editorRef}
+      defaultValue={content}
+      onChange={handleChange}
+      onScroll={onScroll}
+      onKeyDown={onKeyDown}
+      className={`absolute inset-0 w-full h-full p-4 resize-none outline-none font-mono text-sm leading-[1.6rem] bg-transparent block transition-colors overflow-y-scroll overflow-x-hidden ${isDark ? 'text-[#D4D4D4]' : 'text-gray-800'}`}
+      placeholder="Type your markdown here..."
+      spellCheck={false}
+      inputMode={showKeyboard ? "none" : undefined}
+    />
+  );
+});
+
+function useDebounce<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState<T>(value);
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      startTransition(() => {
+        setDebouncedValue(value);
+      });
+    }, delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+}
 
 export default function App() {
-  const [files, setFiles] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.files && Array.isArray(parsed.files)) return parsed.files;
-      } catch (e) { console.error("Failed to load saved files", e); }
-    }
-    return [
-      { name: 'DOCUMENTATION.md', content: DEFAULT_MARKDOWN, scrollPos: 0, cursor: [0, 0] },
-      { name: 'CHANGELOG.md', content: '# Changelog\n\n## [Unreleased]\n- Added real-time preview\n- Added GitHub Flavored Markdown support\n- Added LaTeX Math support\n- Scroll Sync integration', scrollPos: 0, cursor: [0, 0] }
-    ];
-  });
-  const [activeFileIndex, setActiveFileIndex] = useState(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (typeof parsed.activeFileIndex === 'number') return parsed.activeFileIndex;
-      } catch (e) {}
-    }
-    return 0;
-  });
-  const [isPending, startTransition] = useTransition();
-  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
-    return (localStorage.getItem('md_editor_theme') as any) || 'system';
-  });
-
-  useEffect(() => {
-    localStorage.setItem('md_editor_theme', theme);
-  }, [theme]);
+  const [files, setFiles] = useState([
+    { name: 'DOCUMENTATION.md', content: DEFAULT_MARKDOWN },
+    { name: 'CHANGELOG.md', content: '# Changelog\n\n## [Unreleased]\n- Added real-time preview\n- Added GitHub Flavored Markdown support\n- Added LaTeX Math support\n- Scroll Sync integration' }
+  ]);
+  const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [showLatexSymbols, setShowLatexSymbols] = useState(false);
   const [showConvertMenu, setShowConvertMenu] = useState(false);
@@ -132,6 +252,10 @@ export default function App() {
   const [saveFileName, setSaveFileName] = useState('');
   const [hoverSize, setHoverSize] = useState({ r: 0, c: 0 });
   const [editingTable, setEditingTable] = useState<{ startLine: number; endLine: number; headers: string[]; rows: string[][]; alignments: string[]; } | null>(null);
+  const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
+  const [showKeyboard, setShowKeyboard] = useState(false);
+  const [showMobileSidebar, setShowMobileSidebar] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
@@ -159,72 +283,246 @@ export default function App() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ files, activeFileIndex }));
-  }, [files, activeFileIndex]);
-
-  // Restore position when active index changes
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (editorRef.current && files[activeFileIndex]) {
-        const file = files[activeFileIndex];
-        if (typeof file.scrollPos === 'number') {
-          editorRef.current.scrollTop = file.scrollPos;
-        }
-        if (file.cursor) {
-          editorRef.current.setSelectionRange(file.cursor[0], file.cursor[1]);
-        }
-      }
-    }, 50); // Slightly longer delay to ensure DOM is ready
-    return () => clearTimeout(timer);
-  }, [activeFileIndex]);
-
-  const saveCurrentPosition = () => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const scrollPos = editor.scrollTop;
-    const cursor: [number, number] = [editor.selectionStart, editor.selectionEnd];
-    
-    setFiles(prev => {
-      const current = prev[activeFileIndex];
-      if (!current) return prev;
-      if (current.scrollPos === scrollPos && 
-          current.cursor?.[0] === cursor[0] && 
-          current.cursor?.[1] === cursor[1]) {
-        return prev;
-      }
-      const newFiles = [...prev];
-      newFiles[activeFileIndex] = { 
-        ...current, 
-        scrollPos, 
-        cursor 
-      };
-      return newFiles;
-    });
-  };
-
-  // Periodic save of position to handle refresh without tab switch
-  useEffect(() => {
-    const interval = setInterval(() => {
-      saveCurrentPosition();
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [activeFileIndex]);
-
   const activeFile = files[activeFileIndex];
-  const deferredContent = useDeferredValue(activeFile.content);
+  const deferredContent = useDebounce(activeFile.content, 400);
 
-  const handleContentChange = (content: string) => {
-    setFiles(prev => {
-      const newFiles = [...prev];
-      newFiles[activeFileIndex] = { 
-        ...newFiles[activeFileIndex], 
-        content,
-        cursor: editorRef.current ? [editorRef.current.selectionStart, editorRef.current.selectionEnd] : prev[activeFileIndex].cursor
-      };
+  const contentRef = useRef(activeFile.content);
+  useEffect(() => {
+    contentRef.current = activeFile.content;
+  }, [activeFile.content]);
+
+  const handleContentChange = useCallback((content: string) => {
+    setFiles(prevFiles => {
+      const newFiles = [...prevFiles];
+      newFiles[activeFileIndex] = { ...newFiles[activeFileIndex], content };
       return newFiles;
     });
-  };
+  }, [activeFileIndex]);
+
+  const wrapSelection = useCallback((prefix: string, suffix: string) => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    const start = editor.selectionStart;
+    const end = editor.selectionEnd;
+    const text = editor.value;
+    
+    editor.focus();
+    if (start >= prefix.length && end <= text.length - suffix.length && 
+        text.substring(start - prefix.length, start) === prefix &&
+        text.substring(end, end + suffix.length) === suffix) {
+      // Unwrap
+      editor.setSelectionRange(start - prefix.length, end + suffix.length);
+      document.execCommand('insertText', false, text.substring(start, end));
+      queueMicrotask(() => {
+        if (editorRef.current) handleContentChange(editorRef.current.value);
+      });
+      setTimeout(() => {
+        editor.setSelectionRange(start - prefix.length, end - prefix.length);
+      }, 0);
+    } else {
+      // Wrap
+      const selectedText = text.substring(start, end);
+      document.execCommand('insertText', false, prefix + selectedText + suffix);
+      queueMicrotask(() => {
+        if (editorRef.current) handleContentChange(editorRef.current.value);
+      });
+      setTimeout(() => {
+        const newStart = start + prefix.length;
+        const newEnd = start === end ? newStart : end + prefix.length;
+        editor.setSelectionRange(newStart, newEnd);
+      }, 0);
+    }
+  }, [handleContentChange]);
+
+  const insertTextAtCursor = useCallback((textToInsert: string) => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    const start = editor.selectionStart;
+    
+    editor.focus();
+    document.execCommand('insertText', false, textToInsert);
+    queueMicrotask(() => {
+      if (editorRef.current) handleContentChange(editorRef.current.value);
+    });
+    
+    setTimeout(() => {
+      editor.setSelectionRange(start + textToInsert.length, start + textToInsert.length);
+    }, 0);
+  }, []);
+
+  const handleVirtualKeyPress = useCallback((key: string, modifiers: { select?: boolean, ctrl?: boolean } = {}) => {
+    if (!editorRef.current) return;
+    const editor = editorRef.current;
+    
+    // Save scroll to avoid jump
+    const currentScroll = editor.scrollTop;
+
+    let cursorStart = editor.selectionStart;
+    let cursorEnd = editor.selectionEnd;
+    const textBase = editor.value;
+
+    let newContent = textBase;
+    let newCursorStart = cursorStart;
+    let newCursorEnd = cursorEnd;
+    let updateContent = false;
+
+    if (key.startsWith('Arrow')) {
+       let pos = (cursorStart === cursorEnd || !modifiers.select) ? cursorEnd : cursorEnd;
+       
+       if (key === 'ArrowLeft') {
+          if (!modifiers.select && cursorStart !== cursorEnd) pos = cursorStart;
+          else {
+             if (modifiers.ctrl) {
+                 const prevSpace = textBase.lastIndexOf(' ', pos - 2);
+                 const prevNewline = textBase.lastIndexOf('\n', pos - 2);
+                 pos = Math.max(0, Math.max(prevSpace, prevNewline));
+             } else {
+                 pos = Math.max(0, pos - 1);
+             }
+          }
+       } else if (key === 'ArrowRight') {
+          if (!modifiers.select && cursorStart !== cursorEnd) pos = cursorEnd;
+          else {
+             if (modifiers.ctrl) {
+                 const nextSpace = textBase.indexOf(' ', pos + 1);
+                 const nextNewline = textBase.indexOf('\n', pos + 1);
+                 pos = nextSpace !== -1 && nextNewline !== -1 ? Math.min(nextSpace, nextNewline)
+                       : nextSpace !== -1 ? nextSpace : nextNewline !== -1 ? nextNewline : textBase.length;
+             } else {
+                 pos = Math.min(textBase.length, pos + 1);
+             }
+          }
+       } else if (key === 'ArrowUp') {
+          const lines = textBase.substring(0, pos).split('\n');
+          const lastLine = lines[lines.length - 1];
+          const col = lastLine.length;
+          if (lines.length > 1) {
+              const prevLine = lines[lines.length - 2];
+              const prevCol = Math.min(col, prevLine.length);
+              pos -= (lastLine.length + 1 + (prevLine.length - prevCol));
+          } else {
+              pos = 0;
+          }
+       } else if (key === 'ArrowDown') {
+          const linesBefore = textBase.substring(0, pos).split('\n');
+          const col = linesBefore[linesBefore.length - 1].length;
+          const afterPos = textBase.substring(pos);
+          const nextNewline = afterPos.indexOf('\n');
+          if (nextNewline !== -1) {
+              const remainderOfCurrentLine = nextNewline;
+              const nextLineAfter = afterPos.substring(nextNewline + 1);
+              const nextNextNewline = nextLineAfter.indexOf('\n');
+              const nextLineLength = nextNextNewline !== -1 ? nextNextNewline : nextLineAfter.length;
+              pos += remainderOfCurrentLine + 1 + Math.min(col, nextLineLength);
+          } else {
+              pos = textBase.length;
+          }
+       }
+
+       if (modifiers.select) {
+           // Standard selection logic: anchor remains where it was. Focus moves.
+           // Since we can't reliably know anchor from selectionStart/End (they are ordered), 
+           // we assume cursorStart is the anchor if we move right, and cursorEnd is anchor if we move left
+           // For simplicity in synthetic selection:
+           if (pos > cursorStart) {
+               newCursorEnd = pos;
+               newCursorStart = (cursorStart === cursorEnd) ? cursorEnd : cursorStart;
+           } else {
+               newCursorStart = pos;
+               newCursorEnd = (cursorStart === cursorEnd) ? cursorStart : cursorEnd;
+           }
+       } else {
+           newCursorStart = pos;
+           newCursorEnd = pos;
+       }
+       
+       if (newCursorStart > newCursorEnd) {
+           const t = newCursorStart; newCursorStart = newCursorEnd; newCursorEnd = t;
+       }
+    } else if (modifiers.ctrl && (key.toLowerCase() === 'a')) {
+       newCursorStart = 0;
+       newCursorEnd = textBase.length;
+       updateContent = false;
+    } else if (modifiers.ctrl && (key.toLowerCase() === 'b')) {
+       wrapSelection('**', '**');
+       return;
+    } else if (modifiers.ctrl && (key.toLowerCase() === 'i')) {
+       wrapSelection('*', '*');
+       return;
+    } else if (modifiers.ctrl && (key.toLowerCase() === 'u')) {
+       wrapSelection('<u>', '</u>');
+       return;
+    } else if (modifiers.ctrl && (key.toLowerCase() === 'k')) {
+       wrapSelection('[', '](url)');
+       return;
+    } else if (modifiers.ctrl && (key.toLowerCase() === 'z')) {
+       if (editorRef.current) {
+          editorRef.current.focus();
+          document.execCommand('undo');
+          queueMicrotask(() => {
+              if (editorRef.current) handleContentChange(editorRef.current.value);
+          });
+       }
+       return;
+    } else if (modifiers.ctrl && (key.toLowerCase() === 'y')) {
+       if (editorRef.current) {
+          editorRef.current.focus();
+          document.execCommand('redo');
+          queueMicrotask(() => {
+              if (editorRef.current) handleContentChange(editorRef.current.value);
+          });
+       }
+       return;
+    } else if (key === 'Backspace') {
+       editor.focus();
+       if (cursorStart === cursorEnd && cursorStart > 0) {
+          if (modifiers.ctrl) {
+             const prevSpace = textBase.lastIndexOf(' ', cursorStart - 2);
+             const prevNewline = textBase.lastIndexOf('\n', cursorStart - 2);
+             let deleteTo = Math.max(0, Math.max(prevSpace, prevNewline));
+             
+             editor.setSelectionRange(deleteTo, cursorEnd);
+             document.execCommand('delete');
+          } else {
+             document.execCommand('delete');
+          }
+       } else if (cursorStart !== cursorEnd) {
+          document.execCommand('delete');
+       }
+       queueMicrotask(() => {
+           if (editorRef.current) {
+               handleContentChange(editorRef.current.value);
+               editorRef.current.scrollTop = currentScroll;
+           }
+       });
+       return;
+    } else {
+       editor.focus();
+       document.execCommand('insertText', false, key);
+       queueMicrotask(() => {
+           if (editorRef.current) {
+               handleContentChange(editorRef.current.value);
+               editorRef.current.scrollTop = currentScroll;
+           }
+       });
+       return;
+    }
+
+    if (updateContent) {
+        handleContentChange(newContent);
+    }
+    
+    // Need to wait for render cycle before setting selection
+    queueMicrotask(() => {
+      if (editorRef.current) {
+        if (document.activeElement !== editorRef.current) {
+           editorRef.current.focus({ preventScroll: true });
+        }
+        editorRef.current.setSelectionRange(newCursorStart, newCursorEnd);
+        editorRef.current.scrollTop = currentScroll;
+      }
+    });
+  }, [handleContentChange, wrapSelection]);
 
   const handleOpenFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -355,11 +653,12 @@ export default function App() {
       processTable();
       
       handleContentChange(newLines.join('\n'));
+      setToastMessage('✅ Tables successfully formatted');
+      setTimeout(() => setToastMessage(null), 3000);
   };
 
   const modifyLines = (startLine: number, endLine: number, modifier: (text: string) => string) => {
-    const currentVal = editorRef.current?.value ?? activeFile.content;
-    const allLines = currentVal.split('\n');
+    const allLines = contentRef.current.split('\n');
     const targetBlock = allLines.slice(startLine - 1, endLine).join('\n');
     const newBlock = modifier(targetBlock);
     const newLines = [...allLines.slice(0, startLine - 1), newBlock, ...allLines.slice(endLine)];
@@ -411,7 +710,7 @@ export default function App() {
               if (m && types.includes(m[1].toLowerCase())) {
                   lines[0] = lines[0].replace(m[1], newType);
               } else {
-                  lines[0] = lines[0].replace(/^:::/, '::: ' + newType);
+                  lines[0] = lines[0].replace(/^:::(\s*)/, `:::${newType}$1`);
               }
           }
           return lines.join('\n');
@@ -419,8 +718,7 @@ export default function App() {
   };
 
   const openTableEditor = (startLine: number, endLine: number) => {
-    const currentVal = editorRef.current?.value ?? activeFile.content;
-    const lines = currentVal.split('\n').slice(startLine - 1, endLine);
+    const lines = contentRef.current.split('\n').slice(startLine - 1, endLine);
     const parseRow = (line: string) => {
       let row = line.trim().split('|');
       if (row.length > 0 && row[0].trim() === '') row.shift();
@@ -481,8 +779,7 @@ export default function App() {
       ...rows.map((r: string[]) => generateRow(r, false))
     ];
     
-    const currentVal = editorRef.current?.value ?? activeFile.content;
-    const allLines = currentVal.split('\n');
+    const allLines = contentRef.current.split('\n');
     const start = editingTable.startLine - 1;
     const end = editingTable.endLine;
     
@@ -492,7 +789,7 @@ export default function App() {
   };
 
   const convertAllDetailsToLuogu = () => {
-     let newText = editorRef.current?.value ?? activeFile.content;
+     let newText = contentRef.current;
      let match;
      let count = 0;
      while ((match = newText.match(/<details[^>]*>([\s\S]*?)<\/details>/i))) {
@@ -513,7 +810,7 @@ export default function App() {
   };
   
   const convertAllDetailsToStandard = () => {
-     let newText = editorRef.current?.value ?? activeFile.content;
+     let newText = contentRef.current;
      let match;
      let count = 0;
      while ((match = newText.match(/^\s*:::\s*([a-zA-Z]+)(?:[ \t]*([^\r\n]*))?\r?\n([\s\S]*?)(?:\r?\n\s*:::|$)/m))) {
@@ -561,7 +858,7 @@ export default function App() {
     return el.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop;
   };
 
-  const handleEditorScroll = () => {
+  const handleEditorScroll = useCallback(() => {
     if (!editorRef.current || !previewRef.current) return;
     
     // Sync line numbers
@@ -592,23 +889,35 @@ export default function App() {
     
     // Find precise logical line from mirror
     const scrollPos = editor.scrollTop + 16; // Account for paddingTop
-    const mirrorLines = Array.from(mirror.querySelectorAll('[data-mirror-line]')) as HTMLElement[];
-    if (mirrorLines.length === 0) return;
+    const mirrorLines = mirror.firstElementChild ? mirror.firstElementChild.children : mirror.children;
+    if (!mirrorLines || mirrorLines.length === 0) return;
 
     let targetMirrorLine: HTMLElement | null = null;
     let nextMirrorLine: HTMLElement | null = null;
     let currentLineFraction = 1;
 
-    for (let i = 0; i < mirrorLines.length; i++) {
-        if (mirrorLines[i].offsetTop > scrollPos) {
-            nextMirrorLine = mirrorLines[i];
-            targetMirrorLine = i > 0 ? mirrorLines[i - 1] : mirrorLines[0];
-            break;
+    let left = 0;
+    let right = mirrorLines.length - 1;
+    let foundIndex = mirrorLines.length;
+
+    while (left <= right) {
+        const mid = Math.floor((left + right) / 2);
+        const el = mirrorLines[mid] as HTMLElement;
+        if (el.offsetTop > scrollPos) {
+            foundIndex = mid;
+            right = mid - 1;
+        } else {
+            left = mid + 1;
         }
     }
 
+    if (foundIndex < mirrorLines.length) {
+        nextMirrorLine = mirrorLines[foundIndex] as HTMLElement;
+        targetMirrorLine = foundIndex > 0 ? mirrorLines[foundIndex - 1] as HTMLElement : mirrorLines[0] as HTMLElement;
+    }
+
     if (!targetMirrorLine && !nextMirrorLine) {
-        targetMirrorLine = mirrorLines[mirrorLines.length - 1];
+        targetMirrorLine = mirrorLines[mirrorLines.length - 1] as HTMLElement;
     } else if (!targetMirrorLine && nextMirrorLine) {
         targetMirrorLine = nextMirrorLine;
     }
@@ -668,7 +977,7 @@ export default function App() {
        
        preview.scrollTop = Math.max(0, targetScrollTop - 32);
     }
-  };
+  }, []);
 
   const handlePreviewScroll = () => {
     if (!editorRef.current || !previewRef.current) return;
@@ -746,12 +1055,13 @@ export default function App() {
       let editorScrollTop = 0;
 
       if (mirror) {
-          const mirrorLines = Array.from(mirror.querySelectorAll('[data-mirror-line]')) as HTMLElement[];
+          const mirrorLines = mirror.firstElementChild ? mirror.firstElementChild.children : mirror.children;
+          if (!mirrorLines || mirrorLines.length === 0) return;
           const baseLineIndex = Math.max(0, Math.min(mirrorLines.length - 1, Math.floor(currentLine) - 1));
           const nextLineIndex = Math.min(mirrorLines.length - 1, baseLineIndex + 1);
           
-          const baseLineEl = mirrorLines[baseLineIndex];
-          const nextLineEl = mirrorLines[nextLineIndex];
+          const baseLineEl = mirrorLines[baseLineIndex] as HTMLElement;
+          const nextLineEl = mirrorLines[nextLineIndex] as HTMLElement;
           
           if (baseLineEl) {
               const baseTop = baseLineEl.offsetTop;
@@ -776,35 +1086,30 @@ export default function App() {
     }
   };
 
-  const insertTextAtCursor = (text: string) => {
-    if (!editorRef.current) return;
-    const editor = editorRef.current;
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    const currentVal = editorRef.current?.value ?? activeFile.content;
-    const newContent = currentVal.substring(0, start) + text + currentVal.substring(end);
-    
-    handleContentChange(newContent);
-    
-    setTimeout(() => {
-      editor.focus();
-      editor.setSelectionRange(start + text.length, start + text.length);
-    }, 0);
-  };
-
-  // Handle asynchronous layout shifts (math rendering, image loads, etc.)
-  useEffect(() => {
-    if (!previewRef.current) return;
-    
-    const resizeObserver = new ResizeObserver(() => {
-      // When content size changes, re-sync positions if needed
-      // We don't force a scroll here, but we ensure the next scroll calculation 
-      // will use the updated DOM coordinates.
-    });
-    
-    resizeObserver.observe(previewRef.current);
-    return () => resizeObserver.disconnect();
-  }, []);
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === 'b') {
+        e.preventDefault();
+        wrapSelection('**', '**');
+      } else if (e.key === 'i') {
+        e.preventDefault();
+        wrapSelection('*', '*');
+      } else if (e.key === 'u') {
+        e.preventDefault();
+        wrapSelection('<u>', '</u>');
+      } else if (e.key === 'k') {
+        e.preventDefault();
+        wrapSelection('[', '](url)');
+      } else if (e.key === 's') {
+        e.preventDefault();
+        // Just prevent the browser from saving the page. 
+        // Our app auto-saves to state automatically.
+      }
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      insertTextAtCursor('  ');
+    }
+  }, [wrapSelection, insertTextAtCursor]);
 
   const currentTheme = getThemeClass();
   const isDark = currentTheme === 'dark-mode';
@@ -843,6 +1148,9 @@ export default function App() {
     setActiveFileIndex(newFiles.length - 1);
     setShowFileMenu(false);
   };
+
+  const processedContent = useMemo(() => preprocessLatex(deferredContent), [deferredContent]);
+  const deferredContentLines = useMemo(() => deferredContent.split('\n'), [deferredContent]);
 
   const markdownComponents = useMemo(() => ({
     table: ({node, ...props}: any) => {
@@ -912,11 +1220,10 @@ export default function App() {
                   onChange={(e) => {
                       if (e.target.value && startLine && endLine) {
                           changeLuoguType(startLine, endLine, e.target.value);
-                          e.target.value = "";
                       }
                   }}
                   value=""
-                  className="bg-indigo-600/90 text-white px-2 py-1 rounded text-xs shadow hover:bg-indigo-700 transition cursor-pointer outline-none appearance-none cursor-pointer text-center"
+                  className="bg-indigo-600/90 text-white px-2 py-1 rounded text-xs shadow hover:bg-indigo-700 transition cursor-pointer outline-none appearance-none text-center"
                   title="Change Type (info/success/warning/error)"
                 >
                   <option value="" disabled hidden>Type ▾</option>
@@ -1015,6 +1322,16 @@ export default function App() {
   const remarkPluginsMain = useMemo(() => [remarkGfm, remarkMath, remarkAddLineNumbers, remarkDirective, remarkLuogu], []);
   const rehypePluginsMain = useMemo(() => [rehypeKatex, rehypeRaw, rehypeFilterTags, rehypeTableMerge, [rehypeHighlight, { ignoreMissing: true }]] as any, []);
 
+  const renderedMarkdown = useMemo(() => (
+    <Markdown 
+      remarkPlugins={remarkPluginsMain}
+      rehypePlugins={rehypePluginsMain}
+      components={markdownComponents as any}
+    >
+      {processedContent}
+    </Markdown>
+  ), [processedContent, remarkPluginsMain, rehypePluginsMain, markdownComponents]);
+
   return (
     <div className={`flex flex-col h-screen font-sans border-r transition-colors duration-200 ${isDark ? 'dark-mode bg-[#0A0A0A] text-[#D4D4D4] border-[#333]' : 'bg-gray-50 text-gray-900 border-gray-200'} overflow-hidden print:h-auto print:overflow-visible`}>
       {/* Hidden File Input */}
@@ -1028,25 +1345,31 @@ export default function App() {
 
       {/* Header */}
       <header className={`h-10 border-b flex items-center px-3 justify-between shrink-0 transition-colors print:hidden ${isDark ? 'bg-[#1A1A1A] border-[#333]' : 'bg-white border-gray-200 shadow-sm'}`}>
-        <div className="flex items-center gap-6 h-full">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 md:gap-6 h-full min-w-0">
+          <div className="hidden md:flex items-center gap-2 shrink-0">
             <div className={`w-3 h-3 rounded-full ${isDark ? 'bg-[#FF5F56]' : 'bg-red-400'}`}></div>
             <div className={`w-3 h-3 rounded-full ${isDark ? 'bg-[#FFBD2E]' : 'bg-yellow-400'}`}></div>
             <div className={`w-3 h-3 rounded-full ${isDark ? 'bg-[#27C93F]' : 'bg-green-400'}`}></div>
           </div>
-          <nav className="flex h-full">
+          
+          {/* Mobile Sidebar Toggle */}
+          <button 
+            className="md:hidden p-1 -ml-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-[#333] rounded transition-colors"
+            onClick={() => setShowMobileSidebar(true)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+          </button>
+          
+          <nav className="hidden md:flex h-full flex-1 min-w-0 overflow-x-auto no-scrollbar">
             {files.map((file, index) => (
               <div 
                 key={file.name}
-                onClick={() => {
-                  saveCurrentPosition();
-                  setActiveFileIndex(index);
-                }}
+                onClick={() => setActiveFileIndex(index)}
                 className={`px-4 flex items-center gap-2 border-r h-full text-xs cursor-pointer select-none transition-all ${
                   index === activeFileIndex 
                     ? (isDark ? 'bg-[#1E1E1E] border-[#333] border-t-2 border-t-blue-500 font-medium text-[#D4D4D4]' : 'bg-gray-50 border-gray-200 border-t-2 border-t-blue-600 font-semibold text-gray-900') 
                     : (isDark ? 'text-gray-500 hover:bg-[#252525] border-[#333]' : 'text-gray-500 hover:bg-gray-100 border-gray-200')
-                } ${index !== activeFileIndex && 'hidden sm:flex'}`}
+                }`}
               >
                 <Type size={14} className={index === activeFileIndex ? (isDark ? "text-blue-400" : "text-blue-600") : "text-gray-500"} />
                 {file.name}
@@ -1054,8 +1377,8 @@ export default function App() {
             ))}
           </nav>
         </div>
-        <div className="flex gap-2 sm:gap-4 items-center">
-          <div className="flex items-center gap-1 p-1 bg-black/10 dark:bg-white/5 rounded-lg">
+        <div className="flex gap-2 sm:gap-4 items-center shrink-0">
+          <div className="hidden md:flex items-center gap-1 p-1 bg-black/10 dark:bg-white/5 rounded-lg">
             <button 
               onClick={() => setTheme('light')}
               className={`p-1 rounded ${theme === 'light' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'}`}
@@ -1085,7 +1408,7 @@ export default function App() {
               className={`px-3 py-1.5 rounded text-[11px] font-bold cursor-pointer flex items-center gap-1.5 transition-all focus:outline-none ${showFileMenu ? (isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white') : (isDark ? 'bg-[#333] hover:bg-[#444] text-[#D4D4D4]' : 'bg-gray-100 hover:bg-gray-200 text-gray-700')}`}
             >
               <FileText size={14} />
-              FILE
+              <span className="hidden sm:inline">FILE</span>
               <ChevronDown size={12} className={`transition-transform ${showFileMenu ? 'rotate-180' : ''}`} />
             </button>
             
@@ -1132,16 +1455,16 @@ export default function App() {
       </header>
 
       {/* Main Content */}
-      <main className="flex flex-1 overflow-hidden print:overflow-visible">
-        <div className="flex flex-col md:flex-row h-full w-full print:block">
+      <main className="flex flex-col flex-1 overflow-hidden print:overflow-visible relative">
+        <div className="flex flex-col md:flex-row flex-1 h-full w-full print:block overflow-hidden">
           {/* Editor Pane */}
-          <section className={`flex-1 h-1/2 md:h-full border-b md:border-b-0 md:border-r flex flex-col font-mono text-sm leading-relaxed overflow-hidden transition-colors print:hidden ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}>
+          <section className={`${mobileTab === 'editor' ? 'flex' : 'hidden'} md:flex flex-1 h-full border-r flex-col font-mono text-sm leading-relaxed overflow-hidden transition-colors print:hidden ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}>
             <div className={`h-8 border-b pl-4 pr-2 flex items-center justify-between shrink-0 transition-colors ${isDark ? 'bg-[#1A1A1A] border-[#333]' : 'bg-gray-50 border-gray-200'}`}>
-              <div className="flex items-center gap-4">
-                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
+              <div className="flex items-center gap-4 flex-1 min-w-0">
+                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-widest shrink-0">
                   Editor
                 </span>
-                <div className="flex items-center gap-1 relative">
+                <div className="flex items-center gap-1 relative flex-1 min-w-0">
                   <button 
                     onClick={() => setShowLatexSymbols(!showLatexSymbols)}
                     className={`p-1 rounded flex items-center justify-center transition-colors ${isDark ? 'hover:bg-[#333] text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
@@ -1172,7 +1495,7 @@ export default function App() {
                       <ListCollapse size={14} />
                     </button>
                     {showConvertMenu && (
-                      <div className={`absolute top-full right-0 mt-1 w-[180px] z-50`}>
+                      <div className={`fixed top-[72px] left-28 md:absolute md:top-full md:left-auto md:right-0 mt-1 w-[180px] z-[60]`}>
                          <div className={`p-2 rounded-lg shadow-xl border ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}>
                             <div className="flex flex-col gap-1">
                                <button onClick={() => { convertAllDetailsToLuogu(); setShowConvertMenu(false); }} className={`text-left text-xs px-2 py-1.5 rounded transition ${isDark ? 'hover:bg-[#333] text-[#D4D4D4]' : 'hover:bg-gray-100 text-gray-800'}`}>All to Luogu Details (:::)</button>
@@ -1184,8 +1507,8 @@ export default function App() {
                   </div>
                   
                   {showLatexSymbols && (
-                    <div ref={latexPaletteRef} className={`absolute top-full left-0 mt-1 p-3 w-[450px] rounded-lg shadow-xl z-50 border ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}>
-                      <div className="flex flex-col gap-3 max-h-[300px] overflow-y-auto pb-1 pr-1 custom-scrollbar">
+                    <div ref={latexPaletteRef} className={`fixed top-[72px] left-4 right-4 md:absolute md:top-full md:left-0 md:right-auto mt-1 p-3 md:w-[450px] max-w-[450px] rounded-lg shadow-xl z-50 border ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}>
+                      <div className="flex flex-col gap-3 max-h-[40vh] md:max-h-[300px] overflow-y-auto pb-1 pr-1 custom-scrollbar">
                         {LATEX_SYMBOLS.map((category) => (
                           <div key={category.category} className="flex flex-col gap-1">
                             <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{category.category}</div>
@@ -1216,7 +1539,7 @@ export default function App() {
                   )}
 
                   {showTablePicker && (
-                    <div className={`absolute top-full left-0 mt-1 p-2 rounded shadow-lg z-50 border ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}>
+                    <div className={`fixed top-[72px] left-4 md:absolute md:top-full md:left-0 mt-1 p-2 rounded shadow-lg z-50 border ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}>
                       <div className="flex flex-col gap-1" onMouseLeave={() => setHoverSize({ r: 0, c: 0 })}>
                         <div className="text-[10px] text-center mb-1 text-gray-500 font-bold">
                           {hoverSize.r > 0 ? `${hoverSize.c} × ${hoverSize.r}` : 'Insert Table'}
@@ -1251,35 +1574,31 @@ export default function App() {
                 ref={lineNumbersRef}
                 className={`hidden sm:flex flex-col items-center py-4 w-10 border-r text-[11px] leading-[1.6rem] select-none shrink-0 overflow-hidden transition-colors ${isDark ? 'bg-[#1A1A1A] border-[#333] text-[#5A5A5A]' : 'bg-gray-50 border-gray-200 text-gray-400'}`}
               >
-                <LineNumberList content={deferredContent} />
+                <LineNumberComponent length={Math.max(50, deferredContentLines.length + 10)} />
               </div>
-              <div className="flex-1 relative w-full h-full overflow-hidden">
-                <textarea
-                  ref={editorRef}
-                  value={activeFile.content}
-                  onChange={(e) => handleContentChange(e.target.value)}
+              <div className="flex-1 relative w-full h-full overflow-hidden flex">
+                <EditorTextarea
+                  editorRef={editorRef}
+                  content={activeFile.content}
+                  onChange={handleContentChange}
                   onScroll={handleEditorScroll}
-                  className={`absolute inset-0 w-full h-full p-4 resize-none outline-none font-mono text-sm leading-[1.6rem] bg-transparent block transition-colors overflow-y-scroll overflow-x-hidden z-10 ${isDark ? 'text-[#D4D4D4]' : 'text-gray-800'}`}
-                  placeholder="Type your markdown here..."
-                  spellCheck={false}
+                  onKeyDown={handleKeyDown}
+                  isDark={isDark}
+                  showKeyboard={showKeyboard}
                 />
                 <div 
                   ref={mirrorRef} 
                   className={`absolute inset-0 p-4 font-mono text-sm leading-[1.6rem] whitespace-pre-wrap invisible pointer-events-none break-words overflow-y-scroll overflow-x-hidden`} 
                   aria-hidden="true"
                 >
-                  {useMemo(() => {
-                    return deferredContent.split('\n').map((line, i) => (
-                      <div key={i} data-mirror-line={i + 1} className="min-h-[1.6rem]">{line || ' '}</div>
-                    ));
-                  }, [deferredContent])}
+                  <MirrorComponent lines={deferredContentLines} />
                 </div>
               </div>
             </div>
           </section>
 
           {/* Preview Pane */}
-          <section className={`flex-1 h-1/2 md:h-full flex flex-col overflow-hidden relative transition-colors ${isDark ? 'bg-[#121212] text-[#D4D4D4]' : 'bg-white text-gray-900'} print:h-auto print:overflow-visible`} style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
+          <section className={`${mobileTab === 'preview' ? 'flex' : 'hidden'} md:flex flex-1 h-full flex-col overflow-hidden relative transition-colors ${isDark ? 'bg-[#121212] text-[#D4D4D4]' : 'bg-white text-gray-900'} print:h-auto print:overflow-visible`} style={{ WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' }}>
             <div className={`h-8 border-b px-4 flex items-center justify-between shrink-0 transition-colors print:hidden ${isDark ? 'bg-[#1A1A1A] border-[#333]' : 'bg-gray-50 border-gray-200'}`}>
                <span className="text-[10px] font-bold text-gray-500 uppercase">Live Preview</span>
                <div className="flex items-center gap-2">
@@ -1291,24 +1610,49 @@ export default function App() {
               ref={previewRef}
               className="flex-1 p-8 overflow-y-auto w-full print:p-0 print:overflow-visible"
               onScroll={handlePreviewScroll}
-              id="preview-content"
             >
-              <div className={`prose ${isDark ? 'prose-invert' : ''} max-w-none`}>
-                <Markdown 
-                  remarkPlugins={remarkPluginsMain} 
-                  rehypePlugins={rehypePluginsMain} 
-                  components={markdownComponents as any}
-                >
-                  {deferredContent}
-                </Markdown>
+              <div id="preview-content" className={`prose prose-sm max-w-none prose-headings:border-b prose-headings:pb-2 prose-code:before:content-none prose-code:after:content-none transition-all ${isDark ? 'prose-invert prose-headings:border-[#333] text-[#D4D4D4]' : 'prose-slate prose-headings:border-gray-100 text-gray-800'}`}>
+                {renderedMarkdown}
               </div>
             </div>
           </section>
         </div>
+        
+        {/* Virtual Keyboard rendering for Mobile */}
+        {showKeyboard && mobileTab === 'editor' && (
+          <div className="md:hidden shrink-0">
+             <VirtualKeyboard isDark={isDark} onKeyPress={handleVirtualKeyPress} />
+          </div>
+        )}
       </main>
 
+      {/* Mobile Tab Navigation & Keyboard Toggle */}
+      <div className={`md:hidden flex h-14 border-t items-center justify-around shrink-0 transition-colors print:hidden ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}>
+        <button
+          onClick={() => setMobileTab('editor')}
+          className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${mobileTab === 'editor' ? 'text-blue-500' : 'text-gray-500'}`}
+        >
+          <Code size={20} />
+          <span className="text-[10px] font-semibold">Editor</span>
+        </button>
+        <button
+          onClick={() => setMobileTab('preview')}
+          className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${mobileTab === 'preview' ? 'text-blue-500' : 'text-gray-500'}`}
+        >
+          <Eye size={20} />
+          <span className="text-[10px] font-semibold">Preview</span>
+        </button>
+        <button
+          onClick={() => setShowKeyboard(!showKeyboard)}
+          className={`flex flex-col items-center justify-center w-full h-full space-y-1 ${showKeyboard ? 'text-blue-500' : 'text-gray-500'}`}
+        >
+          <Keyboard size={20} />
+          <span className="text-[10px] font-semibold">Keyboard</span>
+        </button>
+      </div>
+
       {/* Footer Status Bar */}
-      <footer className="h-6 bg-[#007ACC] text-white flex items-center px-3 justify-between text-[11px] font-medium shrink-0 print:hidden">
+      <footer className="hidden md:flex h-6 bg-[#007ACC] text-white items-center px-3 justify-between text-[11px] font-medium shrink-0 print:hidden">
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1">
              <Type size={12} />
@@ -1327,18 +1671,21 @@ export default function App() {
         </div>
       </footer>
 
-      <TableEditorModal 
-        key={editingTable ? `${editingTable.startLine}-${editingTable.endLine}` : 'none'}
-        isOpen={!!editingTable} 
-        onClose={() => setEditingTable(null)} 
-        data={editingTable} 
-        onSave={saveTable} 
-        isDark={isDark} 
-      />
+      {editingTable && (
+        <TableEditorModal 
+          key={editingTable ? `${editingTable.startLine}-${editingTable.endLine}` : 'none'}
+          data={editingTable} 
+          onClose={() => setEditingTable(null)} 
+          onSave={saveTable} 
+          isDark={isDark} 
+        />
+      )}
 
       {showSaveDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setShowSaveDialog(false)}>
-          <div className={`w-full max-w-sm rounded-xl shadow-2xl p-6 ${isDark ? 'bg-[#1E1E1E] text-white' : 'bg-white text-gray-900'}`} onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onMouseDown={(e) => {
+          if (e.target === e.currentTarget) setShowSaveDialog(false);
+        }}>
+          <div className={`w-full max-w-sm rounded-xl shadow-2xl p-6 ${isDark ? 'bg-[#1E1E1E] text-white' : 'bg-white text-gray-900'}`}>
             <h3 className="text-lg font-bold mb-4">Save Markdown File</h3>
             <div className="mb-6">
               <label className={`block text-xs font-semibold mb-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>File Name</label>
@@ -1375,16 +1722,69 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Mobile Sidebar */}
+      <div 
+        className={`fixed inset-0 z-[100] md:hidden transition-opacity duration-300 ${showMobileSidebar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
+      >
+        {/* Backdrop */}
+        <div 
+          className="absolute inset-0 bg-black/50"
+          onClick={() => setShowMobileSidebar(false)}
+        />
+        
+        {/* Sidebar Content */}
+        <div 
+          className={`absolute top-0 left-0 bottom-0 w-64 shadow-2xl transition-transform duration-300 transform flex flex-col ${isDark ? 'bg-[#121212] border-r border-[#333] text-[#D4D4D4]' : 'bg-white border-r border-gray-200 text-gray-900'} ${showMobileSidebar ? 'translate-x-0' : '-translate-x-full'}`}
+        >
+          <div className={`p-4 border-b flex items-center justify-between ${isDark ? 'border-[#333]' : 'border-gray-200'}`}>
+            <span className="font-bold uppercase tracking-wider text-sm">Files</span>
+            <button onClick={() => setShowMobileSidebar(false)} className="p-1 -mr-1 rounded hover:bg-black/10 dark:hover:bg-white/10">
+              <X size={16} />
+            </button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto py-2">
+            {files.map((file, index) => (
+              <button
+                key={file.name}
+                onClick={() => {
+                  setActiveFileIndex(index);
+                  setShowMobileSidebar(false);
+                }}
+                className={`w-full px-4 py-3 flex items-center gap-3 text-sm transition-colors text-left ${
+                  index === activeFileIndex 
+                    ? (isDark ? 'bg-[#1E1E1E] text-blue-400 font-medium' : 'bg-blue-50 text-blue-600 font-semibold')
+                    : (isDark ? 'text-gray-400 hover:bg-[#1A1A1A]' : 'text-gray-600 hover:bg-gray-50')
+                }`}
+              >
+                <Type size={16} className={index === activeFileIndex ? (isDark ? "text-blue-400" : "text-blue-600") : "text-gray-400"} />
+                <span className="flex-1 truncate">{file.name}</span>
+                {index === activeFileIndex && (
+                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 rounded-full" />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-[200] animate-in fade-in slide-in-from-bottom-4">
+          <div className={`px-4 py-3 rounded-xl shadow-lg border text-sm font-medium flex items-center gap-2 ${isDark ? 'bg-[#2A2A2A] border-[#444] text-gray-200' : 'bg-gray-900 border-gray-800 text-white'}`}>
+            {toastMessage}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-const TableEditorModal = ({ isOpen, onClose, data, onSave, isDark }: any) => {
-  if (!isOpen || !data) return null;
-
-  const [headers, setHeaders] = useState<string[]>(data ? [...data.headers] : []);
-  const [rows, setRows] = useState<string[][]>(data ? data.rows.map((r: string[]) => [...r]) : []);
-  const [alignments, setAlignments] = useState<string[]>(data ? [...data.alignments] : []);
+const TableEditorModal = ({ onClose, data, onSave, isDark }: any) => {
+  const [headers, setHeaders] = useState<string[]>([...data.headers]);
+  const [rows, setRows] = useState<string[][]>(data.rows.map((r: string[]) => [...r]));
+  const [alignments, setAlignments] = useState<string[]>([...data.alignments]);
 
   // Removed useEffect sync as we now use 'key' to reset component state on new data.
 
@@ -1408,6 +1808,23 @@ const TableEditorModal = ({ isOpen, onClose, data, onSave, isDark }: any) => {
     });
     return md;
   }, [headers, rows, alignments]);
+
+  const processedPreviewMarkdown = useMemo(() => preprocessLatex(previewMarkdown), [previewMarkdown]);
+
+  const renderedPreview = useMemo(() => (
+    <Markdown 
+      remarkPlugins={[remarkGfm, remarkMath, remarkDirective, remarkLuogu]}
+      rehypePlugins={[rehypeKatex, rehypeRaw, rehypeFilterTags, rehypeTableMerge]}
+      components={{
+        table: (props) => <table {...props} className={`w-full border-collapse border text-sm m-0 ${isDark ? 'border-[#333]' : 'border-gray-300'}`} />,
+        thead: (props) => <thead {...props} className={isDark ? 'bg-[#2A2A2A]' : 'bg-gray-100'} />,
+        th: (props) => <th {...props} className={`border p-2 font-semibold ${isDark ? 'border-[#333]' : 'border-gray-300'}`} />,
+        td: (props) => <td {...props} className={`border p-2 ${isDark ? 'border-[#333]' : 'border-gray-300'}`} />
+      }}
+    >
+      {processedPreviewMarkdown}
+    </Markdown>
+  ), [processedPreviewMarkdown, isDark]);
 
   const updateHeader = (colIndex: number, val: string) => {
     const newHeaders = [...headers];
@@ -1472,10 +1889,11 @@ const TableEditorModal = ({ isOpen, onClose, data, onSave, isDark }: any) => {
     setRows(newRows);
   };
 
-  const stopPropagation = (e: React.MouseEvent) => e.stopPropagation();
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 transition-opacity duration-200" onClick={onClose}>
-      <div className={`flex flex-col max-w-[95vw] w-full h-[90vh] rounded-xl shadow-2xl ${isDark ? 'bg-[#1E1E1E] text-[#D4D4D4]' : 'bg-white text-gray-900'} overflow-hidden shadow-black/50`} onClick={stopPropagation}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 transition-opacity duration-200" onMouseDown={(e) => {
+      if (e.target === e.currentTarget) onClose();
+    }}>
+      <div className={`flex flex-col max-w-[95vw] w-full h-[90vh] rounded-xl shadow-2xl ${isDark ? 'bg-[#1E1E1E] text-[#D4D4D4]' : 'bg-white text-gray-900'} overflow-hidden shadow-black/50`}>
          <div className={`px-4 py-3 border-b flex justify-between items-center ${isDark ? 'border-[#333]' : 'border-gray-200'}`}>
            <h3 className="font-bold flex items-center gap-2"><Table size={16} className="text-blue-500" /> Visual Table Editor</h3>
            <button onClick={onClose} className={`p-1 rounded transition-colors ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}><X size={16}/></button>
@@ -1510,7 +1928,7 @@ const TableEditorModal = ({ isOpen, onClose, data, onSave, isDark }: any) => {
                                      <button onClick={() => removeColumn(i)} className="text-red-500 hover:bg-red-500/10 p-1 rounded transition" title="Delete Column"><Trash2 size={12}/></button>
                                   </div>
                                </div>
-                               <input value={h} onChange={e => updateHeader(i, e.target.value)} className={`w-full bg-transparent outline-none p-1.5 text-sm font-semibold rounded ${isDark ? 'focus:bg-[#333]' : 'focus:bg-white'}`} placeholder={`Header ${i+1}`} />
+                               <input value={h || ''} onChange={e => updateHeader(i, e.target.value)} className={`w-full bg-transparent outline-none p-1.5 text-sm font-semibold rounded ${isDark ? 'focus:bg-[#333]' : 'focus:bg-white'}`} placeholder={`Header ${i+1}`} />
                              </div>
                            </th>
                          ))}
@@ -1558,20 +1976,7 @@ const TableEditorModal = ({ isOpen, onClose, data, onSave, isDark }: any) => {
             <div className={`flex-1 flex flex-col p-6 overflow-auto ${isDark ? 'bg-[#121212]' : 'bg-white'}`}>
                <span className="text-[10px] font-bold text-gray-500 uppercase mb-4 tracking-widest">Live Preview</span>
                <div className={`prose prose-sm max-w-none prose-code:before:content-none prose-code:after:content-none ${isDark ? 'prose-invert' : 'prose-slate'}`}>
-                  {useMemo(() => (
-                    <Markdown 
-                      remarkPlugins={[remarkGfm, remarkMath, remarkDirective, remarkLuogu]}
-                      rehypePlugins={[rehypeKatex, rehypeRaw, rehypeFilterTags, rehypeTableMerge]}
-                      components={{
-                        table: (props) => <table {...props} className={`w-full border-collapse border text-sm m-0 ${isDark ? 'border-[#333]' : 'border-gray-300'}`} />,
-                        thead: (props) => <thead {...props} className={isDark ? 'bg-[#2A2A2A]' : 'bg-gray-100'} />,
-                        th: (props) => <th {...props} className={`border p-2 font-semibold ${isDark ? 'border-[#333]' : 'border-gray-300'}`} />,
-                        td: (props) => <td {...props} className={`border p-2 ${isDark ? 'border-[#333]' : 'border-gray-300'}`} />
-                      }}
-                    >
-                      {previewMarkdown}
-                    </Markdown>
-                  ), [previewMarkdown, isDark])}
+                  {renderedPreview}
                </div>
             </div>
          </div>
