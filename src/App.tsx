@@ -1167,7 +1167,7 @@ export default function App() {
             onClick={() => {
               if (startLine && endLine) openTableEditor(startLine, endLine);
             }}
-            className={`absolute top-2 right-2 hidden group-hover:flex items-center gap-1 bg-blue-600 text-white px-2 py-1 rounded text-xs shadow hover:bg-blue-700 transition z-10`}
+            className={`absolute top-2 right-2 flex md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200 items-center gap-1 bg-blue-600 text-white px-2 py-1 rounded text-xs shadow hover:bg-blue-700 z-10`}
             title="Visual Edit Table"
           >
             <Table size={12} /> Edit
@@ -1213,7 +1213,7 @@ export default function App() {
 
         return (
             <div className="relative group not-prose my-6">
-              <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-2 right-2 flex items-center gap-1 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
                 <button 
                   onClick={() => startLine && endLine ? convertToStandardDetails(startLine, endLine) : null}
                   className="bg-blue-600/90 text-white px-2 py-1 rounded text-xs shadow hover:bg-blue-700 transition"
@@ -1293,7 +1293,7 @@ export default function App() {
 
         return (
            <div className="relative group not-prose my-6">
-              <div className="absolute top-2 right-2 hidden group-hover:flex items-center gap-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-2 right-2 flex items-center gap-1 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
                 <button 
                   onClick={() => startLine && endLine ? convertToLuoguDetails(startLine, endLine) : null}
                   className="bg-blue-600/90 text-white px-2 py-1 rounded text-xs shadow hover:bg-blue-700 transition"
@@ -1790,6 +1790,7 @@ const TableEditorModal = ({ onClose, data, onSave, isDark }: any) => {
   const [headers, setHeaders] = useState<string[]>([...data.headers]);
   const [rows, setRows] = useState<string[][]>(data.rows.map((r: string[]) => [...r]));
   const [alignments, setAlignments] = useState<string[]>([...data.alignments]);
+  const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
 
   // Removed useEffect sync as we now use 'key' to reset component state on new data.
 
@@ -1895,21 +1896,45 @@ const TableEditorModal = ({ onClose, data, onSave, isDark }: any) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 transition-opacity duration-200" onMouseDown={(e) => {
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 md:p-4 transition-opacity duration-200" onMouseDown={(e) => {
       if (e.target === e.currentTarget) onClose();
     }}>
-      <div className={`flex flex-col max-w-[95vw] w-full h-[90vh] rounded-xl shadow-2xl ${isDark ? 'bg-[#1E1E1E] text-[#D4D4D4]' : 'bg-white text-gray-900'} overflow-hidden shadow-black/50`}>
-         <div className={`px-4 py-3 border-b flex justify-between items-center ${isDark ? 'border-[#333]' : 'border-gray-200'}`}>
-           <h3 className="font-bold flex items-center gap-2"><Table size={16} className="text-blue-500" /> Visual Table Editor</h3>
-           <button onClick={onClose} className={`p-1 rounded transition-colors ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/10'}`}><X size={16}/></button>
+      <div className={`flex flex-col w-full h-[95vh] md:max-w-[95vw] md:h-[90vh] rounded-2xl shadow-2xl ${isDark ? 'bg-[#1E1E1E] text-[#D4D4D4] border border-[#333]' : 'bg-white text-gray-900 border border-gray-100'} overflow-hidden shadow-black/40`}>
+         {/* Dialog Header */}
+         <div className={`px-5 py-4 border-b flex justify-between items-center ${isDark ? 'border-[#333] bg-black/20' : 'border-gray-200 bg-slate-50'}`}>
+           <h3 className="font-bold flex items-center gap-2.5 text-base text-blue-600 dark:text-blue-400">
+             <span className="p-1.5 rounded-lg bg-blue-500/10 dark:bg-blue-400/10">
+               <Table size={18} />
+             </span> 
+             Visual Table Editor
+           </h3>
+           <button onClick={onClose} className={`p-2 rounded-xl transition-all ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-black/5 text-gray-500 hover:text-gray-950'} active:scale-95`}><X size={18}/></button>
+         </div>
+         
+         {/* Responsive Segments (Only on Mobile screens) */}
+         <div className="flex justify-center p-3 border-b md:hidden border-gray-200 dark:border-[#333] bg-slate-50/50 dark:bg-black/10">
+           <div className={`flex p-0.5 rounded-xl text-xs font-bold w-full max-w-[280px] ${isDark ? 'bg-[#1C1C1E]' : 'bg-gray-200/60'}`}>
+             <button 
+               onClick={() => setActiveTab('editor')}
+               className={`flex-1 py-1.5 rounded-lg transition-all duration-150 ${activeTab === 'editor' ? (isDark ? 'bg-[#48484A] text-white shadow-xs font-bold' : 'bg-white text-black shadow-xs font-semibold') : 'text-gray-500 hover:text-[#bbb] dark:hover:text-gray-300'}`}
+             >
+               Editor Table
+             </button>
+             <button 
+               onClick={() => setActiveTab('preview')}
+               className={`flex-1 py-1.5 rounded-lg transition-all duration-150 ${activeTab === 'preview' ? (isDark ? 'bg-[#48484A] text-white shadow-xs font-bold' : 'bg-white text-black shadow-xs font-semibold') : 'text-gray-500 hover:text-[#bbb] dark:hover:text-gray-300'}`}
+             >
+               Live Preview
+             </button>
+           </div>
          </div>
          
          <div className="flex-1 flex overflow-hidden">
             {/* Editor Side */}
-            <div className={`flex-1 flex flex-col border-r ${isDark ? 'border-[#333] bg-black/5' : 'border-gray-200 bg-gray-50/50'} overflow-hidden`}>
+            <div className={`flex-1 flex flex-col md:border-r ${isDark ? 'border-[#333] bg-black/5' : 'border-gray-200 bg-gray-50/50'} overflow-hidden ${activeTab === 'editor' ? 'flex' : 'hidden md:flex'}`}>
                <div className="p-3 flex gap-2">
-                  <button onClick={addColumn} className="px-3 py-1.5 shadow-sm bg-blue-600 font-medium text-white rounded text-xs hover:bg-blue-700 transition">Add Column</button>
-                  <button onClick={addRow} className="px-3 py-1.5 shadow-sm bg-blue-600 font-medium text-white rounded text-xs hover:bg-blue-700 transition">Add Row</button>
+                  <button onClick={addColumn} className="px-4 py-2 md:px-3 md:py-1.5 shadow-sm bg-blue-600 font-semibold text-white rounded-lg text-xs hover:bg-blue-700 active:scale-95 duration-100 transition-all">Add Column</button>
+                  <button onClick={addRow} className="px-4 py-2 md:px-3 md:py-1.5 shadow-sm bg-blue-600 font-semibold text-white rounded-lg text-xs hover:bg-blue-700 active:scale-95 duration-100 transition-all">Add Row</button>
                </div>
                
                <div className="flex-1 overflow-auto p-4">
@@ -1917,27 +1942,27 @@ const TableEditorModal = ({ onClose, data, onSave, isDark }: any) => {
                      <thead>
                        <tr>
                          {headers.map((h, i) => (
-                           <th key={i} className={`border p-2 ${isDark ? 'border-[#333] bg-[#2A2A2A]' : 'border-gray-300 bg-gray-100'} group min-w-[200px] align-top`}>
-                             <div className="flex flex-col gap-2">
-                               <div className="flex items-center justify-between">
-                                  <div className="flex bg-black/10 dark:bg-white/10 rounded p-0.5">
-                                     <button onClick={() => updateAlignment(i, 'left')} className={`p-1 rounded ${alignments[i] === 'left' || !alignments[i] ? 'bg-white dark:bg-[#333] shadow-sm text-blue-500' : 'opacity-50 hover:opacity-100'}`} title="Align Left"><AlignLeft size={12} /></button>
-                                     <button onClick={() => updateAlignment(i, 'center')} className={`p-1 rounded ${alignments[i] === 'center' ? 'bg-white dark:bg-[#333] shadow-sm text-blue-500' : 'opacity-50 hover:opacity-100'}`} title="Align Center"><AlignCenter size={12} /></button>
-                                     <button onClick={() => updateAlignment(i, 'right')} className={`p-1 rounded ${alignments[i] === 'right' ? 'bg-white dark:bg-[#333] shadow-sm text-blue-500' : 'opacity-50 hover:opacity-100'}`} title="Align Right"><AlignRight size={12} /></button>
+                           <th key={i} className={`border p-2.5 ${isDark ? 'border-[#333] bg-[#2A2A2A]' : 'border-gray-300 bg-gray-100'} group min-w-[220px] align-top`}>
+                             <div className="flex flex-col gap-2.5">
+                               <div className="flex items-center justify-between gap-1">
+                                  <div className="flex bg-black/10 dark:bg-white/10 rounded-lg p-0.5">
+                                     <button onClick={() => updateAlignment(i, 'left')} className={`p-1 rounded ${alignments[i] === 'left' || !alignments[i] ? 'bg-white dark:bg-[#333] shadow-sm text-blue-500' : 'opacity-50 hover:opacity-100'}`} title="Align Left"><AlignLeft size={13} /></button>
+                                     <button onClick={() => updateAlignment(i, 'center')} className={`p-1 rounded ${alignments[i] === 'center' ? 'bg-white dark:bg-[#333] shadow-sm text-blue-500' : 'opacity-50 hover:opacity-100'}`} title="Align Center"><AlignCenter size={13} /></button>
+                                     <button onClick={() => updateAlignment(i, 'right')} className={`p-1 rounded ${alignments[i] === 'right' ? 'bg-white dark:bg-[#333] shadow-sm text-blue-500' : 'opacity-50 hover:opacity-100'}`} title="Align Right"><AlignRight size={13} /></button>
                                   </div>
-                                  <div className="flex gap-1">
-                                     <div className="flex bg-black/10 dark:bg-white/10 rounded p-0.5">
-                                       <button onClick={() => moveColumn(i, -1)} disabled={i === 0} className="p-1 rounded opacity-50 hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed" title="Move Left"><ChevronLeft size={12}/></button>
-                                       <button onClick={() => moveColumn(i, 1)} disabled={i === headers.length - 1} className="p-1 rounded opacity-50 hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed" title="Move Right"><ChevronRight size={12}/></button>
+                                  <div className="flex gap-1.5">
+                                     <div className="flex bg-black/10 dark:bg-white/10 rounded-lg p-0.5">
+                                       <button onClick={() => moveColumn(i, -1)} disabled={i === 0} className="p-1 rounded opacity-50 hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed" title="Move Left"><ChevronLeft size={13}/></button>
+                                       <button onClick={() => moveColumn(i, 1)} disabled={i === headers.length - 1} className="p-1 rounded opacity-50 hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed" title="Move Right"><ChevronRight size={13}/></button>
                                      </div>
-                                     <button onClick={() => removeColumn(i)} className="text-red-500 hover:bg-red-500/10 p-1 rounded transition" title="Delete Column"><Trash2 size={12}/></button>
+                                     <button onClick={() => removeColumn(i)} className="text-red-500 hover:bg-red-500/10 p-1 rounded-md transition" title="Delete Column"><Trash2 size={13}/></button>
                                   </div>
                                </div>
-                               <input value={h || ''} onChange={e => updateHeader(i, e.target.value)} className={`w-full bg-transparent outline-none p-1.5 text-sm font-semibold rounded ${isDark ? 'focus:bg-[#333]' : 'focus:bg-white'}`} placeholder={`Header ${i+1}`} />
+                               <input value={h || ''} onChange={e => updateHeader(i, e.target.value)} className={`w-full bg-transparent outline-none p-1.5 text-sm font-semibold rounded-md ${isDark ? 'focus:bg-[#333]' : 'focus:bg-white border border-transparent focus:border-gray-200'}`} placeholder={`Header ${i+1}`} />
                              </div>
                            </th>
                          ))}
-                         <th className="w-24 border-transparent"></th>
+                         <th className="w-28 border-transparent"></th>
                        </tr>
                      </thead>
                      <tbody>
@@ -1948,7 +1973,7 @@ const TableEditorModal = ({ onClose, data, onSave, isDark }: any) => {
                                   <textarea 
                                     value={cell||''} 
                                     onChange={e => updateCell(rIndex, cIndex, e.target.value)} 
-                                    className={`w-full bg-transparent outline-none p-1.5 text-sm rounded resize-none ${isDark ? 'focus:bg-[#333]' : 'focus:bg-white'}`} 
+                                    className={`w-full bg-transparent outline-none p-1.5 text-sm rounded-md resize-none ${isDark ? 'focus:bg-[#333]' : 'focus:bg-white border border-transparent focus:border-gray-200'}`} 
                                     rows={1} 
                                     onInput={(e) => {
                                       const target = e.target as HTMLTextAreaElement;
@@ -1959,14 +1984,14 @@ const TableEditorModal = ({ onClose, data, onSave, isDark }: any) => {
                                   />
                                </td>
                             ))}
-                            <td className="w-24 p-1 opacity-0 group-hover:opacity-100 transition-opacity pl-2">
-                               <div className="flex items-center gap-1">
-                                  <div className="flex bg-black/10 dark:bg-white/10 rounded p-0.5">
+                            <td className="w-28 p-1 pl-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity bg-black/5 dark:bg-white/5 md:bg-transparent">
+                               <div className="flex items-center gap-1.5">
+                                  <div className="flex bg-black/10 dark:bg-white/10 rounded-lg p-0.5 animate-fade-in">
                                     <button onClick={() => moveRow(rIndex, -1)} disabled={rIndex === 0} className="p-1 rounded opacity-50 hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed" title="Move Up"><ChevronUp size={14}/></button>
                                     <button onClick={() => moveRow(rIndex, 1)} disabled={rIndex === rows.length - 1} className="p-1 rounded opacity-50 hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed" title="Move Down"><ChevronDown size={14}/></button>
                                   </div>
-                                  <button onClick={() => removeRow(rIndex)} className="text-red-500 hover:bg-red-500/10 p-1.5 rounded transition" title="Delete Row">
-                                    <Trash2 size={14} />
+                                  <button onClick={() => removeRow(rIndex)} className="text-red-500 hover:bg-red-500/10 p-1.5 rounded-lg transition" title="Delete Row">
+                                    <Trash2 size={13} />
                                   </button>
                                </div>
                             </td>
@@ -1978,7 +2003,7 @@ const TableEditorModal = ({ onClose, data, onSave, isDark }: any) => {
             </div>
 
             {/* Preview Side */}
-            <div className={`flex-1 flex flex-col p-6 overflow-auto ${isDark ? 'bg-[#121212]' : 'bg-white'}`}>
+            <div className={`flex-1 flex flex-col p-6 overflow-auto ${isDark ? 'bg-[#121212]' : 'bg-white'} ${activeTab === 'preview' ? 'flex' : 'hidden md:flex'}`}>
                <span className="text-[10px] font-bold text-gray-500 uppercase mb-4 tracking-widest">Live Preview</span>
                <div className={`prose prose-sm max-w-none prose-code:before:content-none prose-code:after:content-none ${isDark ? 'prose-invert' : 'prose-slate'}`}>
                   {renderedPreview}
