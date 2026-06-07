@@ -17,7 +17,7 @@ import rehypeHighlight from 'rehype-highlight';
 import { useReactToPrint } from 'react-to-print';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { FileDown, Type, FolderOpen, Sun, Moon, Monitor, Table, Wand2, X, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Info, CheckCircle2, AlertTriangle, XCircle, Sigma, ListCollapse, FileText, Download, Plus, Keyboard, Eye, Code } from 'lucide-react';
+import { FileDown, Type, FolderOpen, Sun, Moon, Monitor, Table, X, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Info, CheckCircle2, AlertTriangle, XCircle, Sigma, ListCollapse, FileText, Download, Plus, Keyboard, Eye, Code } from 'lucide-react';
 import { LATEX_SYMBOLS } from './utils/latexSymbols';
 import { VirtualKeyboard } from './components/VirtualKeyboard';
 
@@ -104,11 +104,10 @@ $$
 
 ## 📊 Visual Table Editor
 
-Our editor auto-formats tables when you click "Format Table" in the toolbar. Try editing this table or clicking its hover action:
+Our editor provides a fully functional visual table editor, accessible directly from the toolbar or via hover actions on any existing table:
 
 | Function | Description | Status |
 | :--- | :---: | ---: |
-| \`formatTable()\` | Auto-aligns raw markdown pipes and dashes | ✅ Complete |
 | \`openTableEditor()\` | Opens a visual grid for editing headers/rows | ✅ Complete |
 | \`save()\` | Serializes back to perfectly padded Markdown | ✅ Complete |
 
@@ -243,11 +242,37 @@ function useDebounce<T>(value: T, delay: number): T {
 }
 
 export default function App() {
-  const [files, setFiles] = useState([
-    { name: 'DOCUMENTATION.md', content: DEFAULT_MARKDOWN },
-    { name: 'CHANGELOG.md', content: '# Changelog\n\n## [Unreleased]\n- Added real-time preview\n- Added GitHub Flavored Markdown support\n- Added LaTeX Math support\n- Scroll Sync integration' }
-  ]);
-  const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [files, setFiles] = useState(() => {
+    const saved = localStorage.getItem('markdown_files');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return [
+      { name: 'DOCUMENTATION.md', content: DEFAULT_MARKDOWN },
+      { name: 'CHANGELOG.md', content: '# Changelog\n\n## [Unreleased]\n- Added real-time preview\n- Added GitHub Flavored Markdown support\n- Added LaTeX Math support\n- Scroll Sync integration' }
+    ];
+  });
+  const [activeFileIndex, setActiveFileIndex] = useState(() => {
+    const saved = localStorage.getItem('markdown_active_file_index');
+    if (saved) {
+      try {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed)) return parsed;
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return 0;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('markdown_files', JSON.stringify(files));
+    localStorage.setItem('markdown_active_file_index', activeFileIndex.toString());
+  }, [files, activeFileIndex]);
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [showLatexSymbols, setShowLatexSymbols] = useState(false);
@@ -585,83 +610,6 @@ export default function App() {
     setHoverSize({ r: 0, c: 0 });
   };
 
-  const formatTables = () => {
-      const lines = activeFile.content.split('\n');
-      const newLines: string[] = [];
-      let tableLines: string[] = [];
-      
-      const processTable = () => {
-          if (tableLines.length === 0) return;
-          
-          const rows = tableLines.map(line => {
-              const trimmed = line.trim();
-              let row = trimmed.split('|');
-              if (row.length > 0 && row[0].trim() === '') row.shift();
-              if (row.length > 0 && row[row.length - 1].trim() === '') row.pop();
-              return row.map(c => c.trim());
-          });
-          
-          const numCols = Math.max(...rows.map(r => r.length));
-          const colWidths = Array(numCols).fill(3);
-          const alignments = Array(numCols).fill('left');
-          
-          rows.forEach((row, rIndex) => {
-              row.forEach((cell, cIndex) => {
-                   if (rIndex === 1) {
-                       const isLeft = cell.startsWith(':');
-                       const isRight = cell.endsWith(':');
-                       if (isLeft && isRight) alignments[cIndex] = 'center';
-                       else if (isRight) alignments[cIndex] = 'right';
-                       else if (isLeft) alignments[cIndex] = 'left';
-                   } else {
-                       colWidths[cIndex] = Math.max(colWidths[cIndex], cell.length);
-                   }
-              });
-          });
-          
-          rows.forEach((row, rIndex) => {
-               let formattedRow = '|';
-               for (let cIndex = 0; cIndex < numCols; cIndex++) {
-                   const cell = row[cIndex] !== undefined ? row[cIndex] : '';
-                   const width = colWidths[cIndex];
-                   if (rIndex === 1) {
-                       let dash = '-'.repeat(width);
-                       if (alignments[cIndex] === 'center') dash = ':' + '-'.repeat(width > 2 ? width - 2 : 1) + ':';
-                       else if (alignments[cIndex] === 'right') dash = '-'.repeat(width > 1 ? width - 1 : 2) + ':';
-                       else if (alignments[cIndex] === 'left' && cell.startsWith(':')) dash = ':' + '-'.repeat(width > 1 ? width - 1 : 2);
-                       
-                       if (dash.length < 3) dash = dash.padEnd(3, '-');
-                       formattedRow += ` ${dash} |`;
-                   } else {
-                       formattedRow += ` ${cell.padEnd(width, ' ')} |`;
-                   }
-               }
-               newLines.push(formattedRow);
-          });
-          tableLines = [];
-      };
-
-      let inCodeBlock = false;
-      for (let i = 0; i < lines.length; i++) {
-          const line = lines[i];
-          if (line.trim().startsWith('```')) {
-              inCodeBlock = !inCodeBlock;
-          }
-          
-          if (!inCodeBlock && line.trim().startsWith('|')) {
-              tableLines.push(line);
-          } else {
-              processTable();
-              newLines.push(line);
-          }
-      }
-      processTable();
-      
-      handleContentChange(newLines.join('\n'));
-      setToastMessage('✅ Tables successfully formatted');
-      setTimeout(() => setToastMessage(null), 3000);
-  };
-
   const modifyLines = (startLine: number, endLine: number, modifier: (text: string) => string) => {
     const allLines = contentRef.current.split('\n');
     const targetBlock = allLines.slice(startLine - 1, endLine).join('\n');
@@ -706,14 +654,12 @@ export default function App() {
   };
 
   const changeLuoguType = (startLine: number, endLine: number, newType: string) => {
-
       modifyLines(startLine, endLine, (text) => {
           const lines = text.split('\n');
           if (lines[0].startsWith(':::')) {
-              const types = ['info', 'success', 'warning', 'error'];
               const m = lines[0].match(/^:::\s*([a-zA-Z]+)/);
-              if (m && types.includes(m[1].toLowerCase())) {
-                  lines[0] = lines[0].replace(m[1], newType);
+              if (m) {
+                  lines[0] = lines[0].replace(/^:::\s*([a-zA-Z]+)/, `:::${newType}`);
               } else {
                   lines[0] = lines[0].replace(/^:::(\s*)/, `:::${newType}$1`);
               }
@@ -808,7 +754,7 @@ export default function App() {
              contentText = block.replace(summaryMatch[0], '');
          }
          if (summary.toLowerCase() === 'info') summary = '';
-         const replacement = '\n:::info' + (summary ? '[' + summary + ']' : '') + '\n' + contentText.trim() + '\n:::\n';
+         const replacement = ':::info' + (summary ? '[' + summary + ']' : '') + '\n' + contentText.trim() + '\n:::';
          newText = newText.substring(0, match.index) + replacement + newText.substring(match.index! + match[0].length);
      }
      handleContentChange(newText);
@@ -818,8 +764,9 @@ export default function App() {
      let newText = contentRef.current;
      let match;
      let count = 0;
-     while ((match = newText.match(/^\s*:::\s*([a-zA-Z]+)(?:[ \t]*([^\r\n]*))?\r?\n([\s\S]*?)(?:\r?\n\s*:::|$)/m))) {
+     while ((match = newText.match(/(?:^|\n)\s*:::\s*([a-zA-Z]+)(?:[ \t]*([^\r\n]*))?\r?\n([\s\S]*?)(?:\r?\n\s*:::|$)/))) {
          if (count++ > 50) break;
+         const startsWithNewline = match[0].startsWith('\n');
          const type = match[1];
          let title = match[2] ? match[2].trim() : type.charAt(0).toUpperCase() + type.slice(1);
          if (title.startsWith('[') && title.endsWith(']')) {
@@ -827,7 +774,8 @@ export default function App() {
          }
          const content = match[3];
          const summaryHtml = `<summary>${title}</summary>\n\n`;
-         newText = newText.substring(0, match.index) + `\n<details>\n${summaryHtml}${content.trim()}\n</details>\n` + newText.substring(match.index! + match[0].length);
+         const replacement = (startsWithNewline ? '\n' : '') + `<details>\n${summaryHtml}${content.trim()}\n</details>`;
+         newText = newText.substring(0, match.index) + replacement + newText.substring(match.index! + match[0].length);
      }
      handleContentChange(newText);
   };
@@ -1483,13 +1431,6 @@ export default function App() {
                     title="Insert Table"
                   >
                     <Table size={14} />
-                  </button>
-                  <button 
-                    onClick={formatTables}
-                    className={`p-1 rounded flex items-center justify-center transition-colors ${isDark ? 'hover:bg-[#333] text-gray-400' : 'hover:bg-gray-200 text-gray-500'}`}
-                    title="Format Tables"
-                  >
-                    <Wand2 size={14} />
                   </button>
                   <div className="relative flex items-center h-full" ref={convertMenuRef}>
                     <button 
