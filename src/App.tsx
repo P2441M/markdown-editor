@@ -17,9 +17,23 @@ import rehypeHighlight from 'rehype-highlight';
 import { useReactToPrint } from 'react-to-print';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
-import { FileDown, Type, FolderOpen, Sun, Moon, Monitor, Table, X, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Info, CheckCircle2, AlertTriangle, XCircle, Sigma, ListCollapse, FileText, Download, Plus, Keyboard, Eye, Code } from 'lucide-react';
+import { Settings, FileDown, Type, FolderOpen, Sun, Moon, Monitor, Table, Wand2, X, Trash2, AlignLeft, AlignCenter, AlignRight, ChevronLeft, ChevronRight, ChevronUp, ChevronDown, Info, CheckCircle2, AlertTriangle, XCircle, Sigma, ListCollapse, FileText, Download, Plus, Keyboard, Eye, Code, Copy, Edit2, Send } from 'lucide-react';
 import { LATEX_SYMBOLS } from './utils/latexSymbols';
 import { VirtualKeyboard } from './components/VirtualKeyboard';
+
+export interface Snippet {
+  prefix: string;
+  body: string;
+  description: string;
+}
+
+const DEFAULT_SNIPPETS: Snippet[] = [
+  { prefix: 'op', body: '\\operatorname{${1:name}}', description: 'Operator name' },
+  { prefix: 'frac', body: '\\frac{${1:num}}{${2:den}}', description: 'Fraction' },
+  { prefix: 'lim', body: '\\lim_{${1:n} \\to ${2:\\infty}}', description: 'Limit' },
+  { prefix: 'sum', body: '\\sum_{${1:i=1}}^{${2:n}}', description: 'Sum' },
+  { prefix: 'matrix', body: '\\begin{matrix}\n${1} & ${2} \\\\\n${3} & ${4}\n\\end{matrix}', description: 'Matrix' },
+];
 
 const remarkAddLineNumbers = () => {
   return (tree: any) => {
@@ -194,32 +208,21 @@ const MirrorComponent = memo(({ lines }: { lines: string[] }) => {
   return <div dangerouslySetInnerHTML={{ __html: html }} className="contents" />;
 });
 
-const EditorTextarea = memo(({ content, onChange, onScroll, onKeyDown, isDark, editorRef, showKeyboard }: any) => {
-  const contentRef = useRef(content);
-  useEffect(() => {
-    if (contentRef.current !== content) {
-      contentRef.current = content;
-      if (editorRef.current && editorRef.current.value !== content) {
-        editorRef.current.value = content;
-      }
-    }
-  }, [content, editorRef]);
-
+const EditorTextarea = memo(({ content, onChange, onScroll, onKeyDown, onKeyUp, onClick, onBlur, isDark, editorRef, showKeyboard }: any) => {
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    contentRef.current = val;
-    startTransition(() => {
-      onChange(val);
-    });
+    onChange(e.target.value);
   };
 
   return (
     <textarea
       ref={editorRef}
-      defaultValue={content}
+      value={content}
       onChange={handleChange}
       onScroll={onScroll}
       onKeyDown={onKeyDown}
+      onKeyUp={onKeyUp}
+      onClick={onClick}
+      onBlur={onBlur}
       className={`absolute inset-0 w-full h-full p-4 resize-none outline-none font-mono text-sm leading-[1.6rem] bg-transparent block transition-colors overflow-y-scroll overflow-x-hidden ${isDark ? 'text-[#D4D4D4]' : 'text-gray-800'}`}
       placeholder="Type your markdown here..."
       spellCheck={false}
@@ -241,7 +244,44 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+const CodeBlock = ({ isDark, children, node, ...props }: any) => {
+  const preRef = useRef<HTMLPreElement>(null);
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    if (preRef.current) {
+      navigator.clipboard.writeText(preRef.current.textContent || '');
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div className="relative group/code">
+      <pre ref={preRef} {...props} className="overflow-x-auto p-4 rounded bg-[#f6f8fa] dark:bg-[#161b22] text-sm group-hover/code:ring-1 ring-gray-300 dark:ring-gray-700 transition">
+        {children}
+      </pre>
+      <button 
+        onClick={handleCopy}
+        className={`absolute top-2 right-2 p-1.5 rounded text-xs opacity-0 group-hover/code:opacity-100 transition shadow ${isDark ? 'bg-[#333] hover:bg-[#444] text-gray-300' : 'bg-white hover:bg-gray-100 text-gray-600 border'}`}
+        title="Copy Code"
+      >
+        {copied ? <CheckCircle2 size={14} className="text-green-500" /> : <Copy size={14} />}
+      </button>
+    </div>
+  );
+};
+
 export default function App() {
+  const [snippets, setSnippets] = useState<Snippet[]>(() => {
+    const saved = localStorage.getItem('markdown_snippets');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return DEFAULT_SNIPPETS;
+  });
+  const [acState, setAcState] = useState({ visible: false, matches: [] as Snippet[], selectedIndex: 0, top: 0, left: 0, prefix: '' });
+  const [fileActionDialog, setFileActionDialog] = useState<{ type: 'new' | 'rename', index?: number } | null>(null);
+  const [fileNameInput, setFileNameInput] = useState('');
   const [files, setFiles] = useState(() => {
     const saved = localStorage.getItem('markdown_files');
     if (saved) {
@@ -279,13 +319,61 @@ export default function App() {
   const [showConvertMenu, setShowConvertMenu] = useState(false);
   const [showFileMenu, setShowFileMenu] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('luogu');
+  const [showLuoguPublishDialog, setShowLuoguPublishDialog] = useState(false);
+  const [showLuoguImportDialog, setShowLuoguImportDialog] = useState(false);
+  const [luoguUid, setLuoguUid] = useState(() => localStorage.getItem('luogu_uid') || '');
+  const [luoguClientId, setLuoguClientId] = useState(() => localStorage.getItem('luogu_client_id') || '');
+  
+  const [showCnblogsPublishDialog, setShowCnblogsPublishDialog] = useState(false);
+  
+  
+  const [cnblogsCookie, setCnblogsCookie] = useState(() => localStorage.getItem('cnblogs_cookie') || '');
+  const [cnblogsBlogId, setCnblogsBlogId] = useState(() => localStorage.getItem('cnblogs_blogid') || '');
+  
+  
+  const [isPublishingCnblogs, setIsPublishingCnblogs] = useState(false);
+  const [cnblogsPostId, setCnblogsPostId] = useState('');
+  const [cnblogsIsDraft, setCnblogsIsDraft] = useState(false);
+  const [cnblogsCollections, setCnblogsCollections] = useState('');
+  const [cnblogsTags, setCnblogsTags] = useState('');
+
+  const [publishTitle, setPublishTitle] = useState('');
+  const [publishCategory, setPublishCategory] = useState(1);
+  const [publishIsPublic, setPublishIsPublic] = useState(false);
+  const [publishSolutionFor, setPublishSolutionFor] = useState('');
+  const [publishTop, setPublishTop] = useState(2);
+  const [publishLid, setPublishLid] = useState('');
+  
+  const [importLid, setImportLid] = useState('');
+  const [isPublishingToLuogu, setIsPublishingToLuogu] = useState(false);
+  const [isImportingLuogu, setIsImportingLuogu] = useState(false);
   const [saveFileName, setSaveFileName] = useState('');
+
+  const LUOGU_CATEGORIES = [
+    { id: 1, name: "个人记录" },
+    { id: 2, name: "题解" },
+    { id: 3, name: "科技·工程" },
+    { id: 4, name: "算法·理论" },
+    { id: 5, name: "生活·游记" },
+    { id: 6, name: "学习·文化课" },
+    { id: 7, name: "休闲·娱乐" },
+    { id: 8, name: "闲话" },
+  ];
   const [hoverSize, setHoverSize] = useState({ r: 0, c: 0 });
   const [editingTable, setEditingTable] = useState<{ startLine: number; endLine: number; headers: string[]; rows: string[][]; alignments: string[]; } | null>(null);
   const [mobileTab, setMobileTab] = useState<'editor' | 'preview'>('editor');
   const [showKeyboard, setShowKeyboard] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (toastMessage) {
+      const timer = setTimeout(() => setToastMessage(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toastMessage]);
 
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
@@ -317,11 +405,36 @@ export default function App() {
   const deferredContent = useDebounce(activeFile.content, 400);
 
   const contentRef = useRef(activeFile.content);
+  const snippetStateRef = useRef<{ active: boolean; stops: { id: number, pos: number, length: number }[]; currentIndex: number }>({ active: false, stops: [], currentIndex: 0 });
+  const contentLenRef = useRef(activeFile.content.length);
+
   useEffect(() => {
     contentRef.current = activeFile.content;
   }, [activeFile.content]);
 
+  useEffect(() => {
+    snippetStateRef.current.active = false;
+    contentLenRef.current = activeFile?.content?.length || 0;
+  }, [activeFileIndex, files.length]);
+
   const handleContentChange = useCallback((content: string) => {
+    const lenDiff = content.length - contentLenRef.current;
+    contentLenRef.current = content.length;
+
+    if (snippetStateRef.current.active && lenDiff !== 0) {
+       const state = snippetStateRef.current;
+       const newStops = state.stops.map((s, idx) => {
+           if (idx > state.currentIndex) {
+               return { ...s, pos: s.pos + lenDiff };
+           }
+           if (idx === state.currentIndex) {
+               return { ...s, length: Math.max(0, s.length + lenDiff) };
+           }
+           return s;
+       });
+       snippetStateRef.current.stops = newStops;
+    }
+
     setFiles(prevFiles => {
       const newFiles = [...prevFiles];
       newFiles[activeFileIndex] = { ...newFiles[activeFileIndex], content };
@@ -1039,7 +1152,163 @@ export default function App() {
     }
   };
 
+  const checkAutocomplete = useCallback(() => {
+    const el = editorRef.current;
+    if (!el) return;
+    const selStart = el.selectionStart;
+    const val = el.value;
+    const textBefore = val.slice(0, selStart);
+    const wordMatch = textBefore.match(/([a-zA-Z\\]+)$/);
+    if (wordMatch) {
+      const currentWord = wordMatch[1];
+      const matches = snippets.filter(s => s.prefix.startsWith(currentWord) || ('\\' + s.prefix).startsWith(currentWord));
+      if (matches.length > 0) {
+        const linesBefore = textBefore.split('\n');
+        const currentLineIdx = linesBefore.length - 1;
+        let top = 0;
+        const lineEl = mirrorRef.current?.querySelector(`[data-mirror-line="${currentLineIdx + 1}"]`);
+        if (lineEl) {
+          top = (lineEl as HTMLElement).offsetTop + 20;
+        }
+        const left = Math.min(24 + linesBefore[currentLineIdx].length * 8, 300); // approx
+        setAcState(prev => ({
+          visible: true,
+          matches,
+          selectedIndex: prev.visible ? Math.min(prev.selectedIndex, matches.length - 1) : 0,
+          top,
+          left,
+          prefix: currentWord
+        }));
+        return;
+      }
+    }
+    setAcState(s => ({ ...s, visible: false }));
+  }, [snippets]);
+
+  const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
+    const ignoredKeys = ['ArrowUp', 'ArrowDown', 'Enter', 'Escape', 'Tab'];
+    if (!ignoredKeys.includes(e.key)) {
+      checkAutocomplete();
+    }
+  }, [checkAutocomplete]);
+
+  const applySnippet = useCallback((snippet: Snippet) => {
+    const el = editorRef.current;
+    if (!el) return;
+    
+    // First hide autocomplete
+    setAcState(s => ({ ...s, visible: false }));
+
+    const selStart = el.selectionStart;
+    const val = el.value;
+    const textBefore = val.slice(0, selStart);
+    const matchPrefix = acState.prefix;
+    
+    if (textBefore.endsWith(matchPrefix)) {
+      const startText = textBefore.slice(0, -matchPrefix.length);
+      const newSelBasis = startText.length;
+      
+      let offsetChange = 0;
+      const placeholders: { id: number, start: number, defaultText: string }[] = [];
+      const regex = /\$\{([0-9]+):([^}]+)\}|\$\{([0-9]+)\}|\$([0-9]+)/g;
+
+      let finalBody = snippet.body.replace(regex, (match, p1, p2, p3, p4, offset) => {
+          const id = parseInt(p1 || p3 || p4, 10);
+          const defaultText = p2 || '';
+          placeholders.push({ id, start: offset + offsetChange, defaultText });
+          offsetChange += defaultText.length - match.length;
+          return defaultText;
+      });
+
+      el.focus();
+      el.setSelectionRange(newSelBasis, newSelBasis + matchPrefix.length);
+      document.execCommand('insertText', false, finalBody);
+      handleContentChange(el.value);
+      
+      placeholders.sort((a, b) => a.id - b.id);
+      const uniqueStops: { id: number, pos: number, length: number }[] = [];
+      const seen = new Set();
+      for (const p of placeholders) {
+          if (!seen.has(p.id) && p.id !== 0) { // $0 is usually end, handled differently if needed, but let's just collect all currently
+              seen.add(p.id);
+              uniqueStops.push({ id: p.id, pos: newSelBasis + p.start, length: p.defaultText.length });
+          }
+      }
+      
+      if (uniqueStops.length > 0) {
+          snippetStateRef.current = { active: true, stops: uniqueStops, currentIndex: 0 };
+          const first = uniqueStops[0];
+          setTimeout(() => {
+              if (editorRef.current) {
+                  editorRef.current.focus();
+                  editorRef.current.setSelectionRange(first.pos, first.pos + first.length);
+              }
+          }, 10);
+      } else {
+          snippetStateRef.current = { active: false, stops: [], currentIndex: 0 };
+          setTimeout(() => {
+              if (editorRef.current) {
+                  editorRef.current.focus();
+                  const finalPos = newSelBasis + finalBody.length;
+                  editorRef.current.setSelectionRange(finalPos, finalPos);
+              }
+          }, 10);
+      }
+    }
+  }, [acState.prefix, handleContentChange]);
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (snippetStateRef.current.active && (e.key === 'Tab' || e.key === 'Enter')) {
+      const state = snippetStateRef.current;
+      if (state.currentIndex + 1 < state.stops.length) {
+         e.preventDefault();
+         const nextIdx = state.currentIndex + 1;
+         const nextStop = state.stops[nextIdx];
+         snippetStateRef.current.currentIndex = nextIdx;
+         editorRef.current?.setSelectionRange(nextStop.pos, nextStop.pos + nextStop.length);
+         return;
+      } else {
+         if (e.key === 'Tab') {
+             e.preventDefault();
+             snippetStateRef.current.active = false;
+             const currentPos = editorRef.current?.selectionEnd || 0;
+             editorRef.current?.setSelectionRange(currentPos, currentPos);
+             return;
+         }
+         // If Enter, we let it do its default behavior (newline or replacing selection),
+         // BUT wait, if we still have text selected, Enter will REPLACE it!
+         // Usually we want Enter to just exit the mode and leave the text intact, then add a newline?
+         // Actually in VS Code, Enter replaces selection.
+         // Wait, no, in VS Code Enter just accepts the completion and we are out of placeholder editing.
+         // Let's just prevent default, clear active state, collapse selection to end!
+         e.preventDefault();
+         snippetStateRef.current.active = false;
+         const currentPos = editorRef.current?.selectionEnd || 0;
+         editorRef.current?.setSelectionRange(currentPos, currentPos);
+         return;
+      }
+    }
+
+    if (acState.visible && acState.matches.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setAcState(s => ({ ...s, selectedIndex: (s.selectedIndex + 1) % s.matches.length }));
+        return;
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setAcState(s => ({ ...s, selectedIndex: (s.selectedIndex - 1 + s.matches.length) % s.matches.length }));
+        return;
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        applySnippet(acState.matches[acState.selectedIndex]);
+        return;
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setAcState(s => ({ ...s, visible: false }));
+        return;
+      }
+    }
+
     if (e.ctrlKey || e.metaKey) {
       if (e.key === 'b') {
         e.preventDefault();
@@ -1062,7 +1331,7 @@ export default function App() {
       e.preventDefault();
       insertTextAtCursor('  ');
     }
-  }, [wrapSelection, insertTextAtCursor]);
+  }, [wrapSelection, insertTextAtCursor, acState, applySnippet]);
 
   const currentTheme = getThemeClass();
   const isDark = currentTheme === 'dark-mode';
@@ -1083,6 +1352,306 @@ export default function App() {
     setShowSaveDialog(true);
   };
 
+  const handlePublishToLuogu = () => {
+    const defaultMeta = (activeFile as any).luogu || {};
+    setPublishTitle(defaultMeta.title || activeFile.name.replace(/\.md$/, ''));
+    setPublishCategory(defaultMeta.category || 1);
+    setPublishIsPublic(defaultMeta.isPublic || false);
+    setPublishSolutionFor(defaultMeta.solutionFor || '');
+    setPublishTop(typeof defaultMeta.top === 'number' ? defaultMeta.top : 2);
+    setPublishLid(defaultMeta.lid || '');
+    setShowLuoguPublishDialog(true);
+  };
+
+  const [cnblogsAvailableCollections, setCnblogsAvailableCollections] = useState<any[]>([]);
+  const [cnblogsAvailableTags, setCnblogsAvailableTags] = useState<any[]>([]);
+  const [isFetchingCnblogsTerms, setIsFetchingCnblogsTerms] = useState(false);
+
+  const fetchCnblogsTerms = async () => {
+    if (!cnblogsCookie.trim() || false) {
+         setToastMessage('❌ Missing CNBlogs configuration.');
+         return;
+    }
+    setIsFetchingCnblogsTerms(true);
+    setToastMessage('Fetching collections & tags...');
+    try {
+      const res = await fetch('/api/cnblogs/terms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cookie: cnblogsCookie.trim(),
+          
+        })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Failed to fetch terms');
+      console.log('Collections:', data.collections);
+      console.log('Tags:', data.tags);
+      setCnblogsAvailableCollections(data.collections || []);
+      setCnblogsAvailableTags(data.tags || []);
+      setToastMessage('✅ Fetched collections & tags.');
+    } catch (err: any) {
+      setToastMessage(`❌ Failed to fetch terms: ${err.message}`);
+    } finally {
+      setIsFetchingCnblogsTerms(false);
+    }
+  };
+
+  const handlePublishToCnblogs = () => {
+    // try to parse front matter for cnblogs
+    let tags = '';
+    let colls = '';
+    let title = activeFile.name.replace(/\.md$/, '');
+    if (activeFile.content && activeFile.content.startsWith('---')) {
+        const parts = activeFile.content.split('---');
+        if (parts.length >= 3) {
+            const fm = parts[1];
+            const titleMatch = fm.match(/title:s*(.+)/i);
+            if (titleMatch) title = titleMatch[1].replace(/^['"]|['"]$/g, '');
+            const tagsMatch = fm.match(/tags:s*(.+)/i);
+            if (tagsMatch) tags = tagsMatch[1].replace(/^['"]|['"]$/g, '').replace(/[|]/g, '');
+            const collsMatch = fm.match(/collections?:s*(.+)/i);
+            if (collsMatch) colls = collsMatch[1].replace(/^['"]|['"]$/g, '').replace(/[|]/g, '');
+        }
+    }
+    setCnblogsTags(tags);
+    setCnblogsCollections(colls);
+    setPublishTitle(title);
+    
+    setShowCnblogsPublishDialog(true);
+  };
+
+  const handleImportFromLuogu = () => {
+    setShowLuoguImportDialog(true);
+  };
+
+  const executeCnblogsPublish = async () => {
+     if (!cnblogsCookie.trim() || false) {
+         setToastMessage('❌ Missing CNBlogs configuration.');
+         return;
+     }
+     localStorage.setItem('cnblogs_cookie', cnblogsCookie.trim());
+     
+
+     setIsPublishingCnblogs(true);
+     setToastMessage('Publishing to CNBlogs...');
+     
+     try {
+       const res = await fetch('/api/cnblogs/publish', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({
+           cookie: cnblogsCookie.trim(),
+          
+           title: publishTitle || activeFile.name.replace(/\.md$/, ''),
+           
+           content: (() => {
+               let newText = activeFile.content;
+               let match;
+               let count = 0;
+               while ((match = newText.match(/(?:^|\n)\s*:::\s*([a-zA-Z]+)(?:[ \t]*([^\r\n]*))?\r?\n([\s\S]*?)(?:\r?\n\s*:::|$)/))) {
+                   if (count++ > 50) break;
+                   const startsWithNewline = match[0].startsWith('\n');
+                   const type = match[1];
+                   let title = match[2] ? match[2].trim() : type.charAt(0).toUpperCase() + type.slice(1);
+                   if (title.startsWith('[') && title.endsWith(']')) {
+                       title = title.substring(1, title.length - 1);
+                   }
+                   const content = match[3];
+                   const summaryHtml = '<summary>' + title + '</summary>\n\n';
+                   const replacement = (startsWithNewline ? '\n' : '') + '<details>\n' + summaryHtml + content.trim() + '\n</details>';
+                   newText = newText.substring(0, match.index) + replacement + newText.substring(match.index + match[0].length);
+               }
+               return newText;
+           })(),
+
+           isPublish: !cnblogsIsDraft,
+           postId: cnblogsPostId.trim(),
+           collections: cnblogsCollections.trim(),
+           collectionIds: cnblogsCollections.split(',').map(c => c.trim()).filter(Boolean).map(catTitle => { const found = cnblogsAvailableCollections?.find(c => c.title === catTitle) || cnblogsAvailableCollections?.find(c => catTitle.replace(/^\[合集\]/i,'').trim() === c.title.replace(/^\[合集\]/i,'').trim()); return found ? found.id : null }).filter(Boolean),
+           tags: cnblogsTags.trim()
+         })
+       });
+
+       const data = await res.json();
+       if (!data.success) {
+           throw new Error(data.error || 'Failed to publish');
+       }
+       setShowCnblogsPublishDialog(false);
+       setToastMessage(`✅ Successfully published to CNBlogs (Post ID: ${data.postId})`);
+     } catch (err: any) {
+       console.error("Publish error", err);
+       setToastMessage(`❌ Publish failed: ${err.message}`);
+     } finally {
+       setIsPublishingCnblogs(false);
+     }
+  };
+
+  const checkCnblogsApi = async () => {
+    if (!cnblogsCookie.trim() || false) {
+         setToastMessage('❌ Missing CNBlogs configuration.');
+         return;
+    }
+    setToastMessage('Checking API...');
+    try {
+      const res = await fetch('/api/cnblogs/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cookie: cnblogsCookie.trim(),
+          
+        })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || 'Check failed');
+      
+      const blog = data.blogs && data.blogs[0];
+      if (blog && blog.blogid) {
+          setCnblogsBlogId(blog.blogid);
+          localStorage.setItem('cnblogs_blogid', blog.blogid);
+      }
+      setToastMessage(`✅ Success! Blog: ${blog?.blogName || 'Found'}`);
+    } catch (err: any) {
+      setToastMessage(`❌ API Check failed: ${err.message}`);
+    }
+  };
+
+  const executeLuoguPublish = async () => {
+     if (!luoguUid.trim() || !luoguClientId.trim()) {
+         setToastMessage('❌ Both _uid and __client_id are required.');
+         return;
+     }
+     localStorage.setItem('luogu_uid', luoguUid.trim());
+     localStorage.setItem('luogu_client_id', luoguClientId.trim());
+     setIsPublishingToLuogu(true);
+     
+     const fullCookie = `_uid=${luoguUid.trim()}; __client_id=${luoguClientId.trim()}`;
+
+     let text = activeFile.content;
+     let match;
+     let count = 0;
+     while ((match = text.match(/<details[^>]*>([\s\S]*?)<\/details>/i))) {
+         if (count++ > 50) break;
+         const block = match[1];
+         let summary = '';
+         const summaryMatch = block.match(/<summary[^>]*>([\s\S]*?)<\/summary>/i);
+         let contentText = block;
+         if (summaryMatch) {
+             summary = summaryMatch[1].replace(/<[^>]+>/g, '').trim();
+             contentText = block.replace(summaryMatch[0], '');
+         }
+         if (summary.toLowerCase() === 'info') summary = '';
+         const replacement = ':::info' + (summary ? '[' + summary + ']' : '') + '\n' + contentText.trim() + '\n:::';
+         text = text.substring(0, match.index) + replacement + text.substring(match.index! + match[0].length);
+     }
+     
+     try {
+       const res = await fetch('/api/luogu/publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+             cookie: fullCookie,
+             title: publishTitle || activeFile.name.replace(/\.md$/, ''),
+             content: text,
+             category: publishCategory,
+             isPublic: publishIsPublic,
+             solutionFor: publishSolutionFor,
+             top: publishTop,
+             lid: publishLid
+          })
+       });
+       
+       const data = await res.json();
+       if (!res.ok || !data.success) {
+           throw new Error(data.error || 'Failed to publish');
+       }
+       
+       const newFiles = [...files];
+       newFiles[activeFileIndex] = {
+           ...activeFile,
+           luogu: {
+              ...(activeFile as any).luogu,
+              title: publishTitle,
+              category: publishCategory,
+              isPublic: publishIsPublic,
+              solutionFor: publishSolutionFor,
+              top: publishTop,
+              lid: data.lid || publishLid
+           }
+       };
+       setFiles(newFiles);
+       
+       setToastMessage('✅ Published successfully!');
+       setShowLuoguPublishDialog(false);
+       if (data.url) {
+          window.open(data.url, '_blank');
+       }
+     } catch (e: any) {
+       setToastMessage('❌ Error: ' + e.message);
+     } finally {
+       setIsPublishingToLuogu(false);
+     }
+  };
+
+  const executeLuoguImport = async () => {
+     if (!importLid.trim() || !luoguUid.trim() || !luoguClientId.trim()) {
+         setToastMessage('❌ Article ID and Cookies are required.');
+         return;
+     }
+     localStorage.setItem('luogu_uid', luoguUid.trim());
+     localStorage.setItem('luogu_client_id', luoguClientId.trim());
+     setIsImportingLuogu(true);
+
+     const fullCookie = `_uid=${luoguUid.trim()}; __client_id=${luoguClientId.trim()}`;
+     
+     try {
+       const res = await fetch('/api/luogu/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+             cookie: fullCookie,
+             lid: importLid.trim()
+          })
+       });
+       
+       const data = await res.json();
+       if (!res.ok || !data.success) {
+           throw new Error(data.error || 'Failed to import');
+       }
+       
+       const newFileName = `${data.title || 'Imported'}.md`;
+       let markdownContent = data.content;
+       
+       // Reverse convert ::: blocks back to robust HTML details if needed, 
+       // but strictly speaking, Luogu supports :::, so we can just keep them.
+       // The parser supports remarkLuogu natively!
+       
+       const newFiles = [...files, { 
+          name: newFileName, 
+          content: markdownContent,
+          luogu: {
+            title: data.title,
+            category: data.category,
+            isPublic: data.isPublic,
+            solutionFor: data.solutionFor,
+            top: data.top,
+            lid: data.lid || importLid.trim()
+          }
+       }];
+       setFiles(newFiles);
+       setActiveFileIndex(newFiles.length - 1);
+       if (data.category) setPublishCategory(data.category);
+       
+       setToastMessage(`✅ Loaded: ${data.title}`);
+       setShowLuoguImportDialog(false);
+       setImportLid('');
+     } catch (e: any) {
+       setToastMessage('❌ Error: ' + e.message);
+     } finally {
+       setIsImportingLuogu(false);
+     }
+  };
+
   const confirmDownload = () => {
     const blob = new Blob([activeFile.content], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -1094,18 +1663,42 @@ export default function App() {
     setShowSaveDialog(false);
   };
 
-  const handleNewFile = () => {
-    const newName = `Untitled-${files.length + 1}.md`;
-    const newFiles = [...files, { name: newName, content: '' }];
-    setFiles(newFiles);
-    setActiveFileIndex(newFiles.length - 1);
+  const openNewFileDialog = () => {
+    setFileNameInput(`Untitled-${files.length + 1}.md`);
+    setFileActionDialog({ type: 'new' });
     setShowFileMenu(false);
+  };
+
+  const openRenameFileDialog = (e: React.MouseEvent, index: number) => {
+    e.stopPropagation();
+    setFileNameInput(files[index].name);
+    setFileActionDialog({ type: 'rename', index });
+  };
+
+  const handleFileNameSubmit = () => {
+    let finalName = fileNameInput.trim();
+    if (!finalName) return;
+    if (!finalName.toLowerCase().endsWith('.md')) finalName += '.md';
+    
+    if (fileActionDialog?.type === 'rename' && typeof fileActionDialog.index === 'number') {
+      setFiles(prev => {
+        const newFiles = [...prev];
+        newFiles[fileActionDialog.index] = { ...newFiles[fileActionDialog.index], name: finalName };
+        return newFiles;
+      });
+    } else if (fileActionDialog?.type === 'new') {
+      const newFiles = [...files, { name: finalName, content: '' }];
+      setFiles(newFiles);
+      setActiveFileIndex(newFiles.length - 1);
+    }
+    setFileActionDialog(null);
   };
 
   const processedContent = useMemo(() => preprocessLatex(deferredContent), [deferredContent]);
   const deferredContentLines = useMemo(() => deferredContent.split('\n'), [deferredContent]);
 
   const markdownComponents = useMemo(() => ({
+    pre: (props: any) => <CodeBlock isDark={isDark} {...props} />,
     table: ({node, ...props}: any) => {
       const startLine = node?.position?.start?.line;
       const endLine = node?.position?.end?.line;
@@ -1127,9 +1720,9 @@ export default function App() {
     thead: (props: any) => <thead {...props} className={isDark ? 'bg-[#2A2A2A]' : 'bg-gray-100'} />,
     th: (props: any) => <th {...props} className={`border p-2 font-semibold text-left ${isDark ? 'border-[#333]' : 'border-gray-200'}`} />,
     td: (props: any) => <td {...props} className={`border p-2 ${isDark ? 'border-[#333]' : 'border-gray-300'}`} />,
-    'luogu-details': ({ node, children, ...props }: any) => {
-        const type = node.properties?.type || 'info';
-        const isOpen = node.properties?.open !== undefined && node.properties?.open !== false && node.properties?.open !== "false";
+    'luogu-details': ({ node, className, children, ...props }: any) => {
+        const type = node?.properties?.type || 'info';
+        const isOpen = node?.properties?.open !== undefined && node?.properties?.open !== false && node?.properties?.open !== "false";
         const borderColors: any = { info: 'border-blue-500', success: 'border-green-500', warning: 'border-amber-500', error: 'border-red-500' };
         const bgColors: any = { 
           info: 'bg-[#eff6ff]', 
@@ -1164,10 +1757,10 @@ export default function App() {
               <div className="absolute top-2 right-2 flex items-center gap-1 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
                 <button 
                   onClick={() => startLine && endLine ? convertToStandardDetails(startLine, endLine) : null}
-                  className="bg-blue-600/90 text-white px-2 py-1 rounded text-xs shadow hover:bg-blue-700 transition"
+                  className="flex items-center gap-1 bg-blue-600/90 text-white px-2 py-1 rounded text-[10px] md:text-xs shadow hover:bg-blue-700 transition"
                   title="Convert to Standard Details"
                 >
-                  To Standard
+                  <ListCollapse size={12} /> <span className="hidden sm:inline">To Standard</span>
                 </button>
                 <select 
                   onChange={(e) => {
@@ -1176,7 +1769,7 @@ export default function App() {
                       }
                   }}
                   value=""
-                  className="bg-indigo-600/90 text-white px-2 py-1 rounded text-xs shadow hover:bg-indigo-700 transition cursor-pointer outline-none appearance-none text-center"
+                  className="bg-indigo-600/90 text-white px-2 py-1 mx-1 rounded text-[10px] md:text-xs shadow hover:bg-indigo-700 transition cursor-pointer outline-none appearance-none text-center"
                   title="Change Type (info/success/warning/error)"
                 >
                   <option value="" disabled hidden>Type ▾</option>
@@ -1187,7 +1780,7 @@ export default function App() {
                 </select>
               </div>
               <details 
-                  className={`border-l-[4px] ${borderColors[type]} ${bgColors[type]} ${bgColorsDark[type]} group/details overflow-hidden rounded-r-md transition-all duration-200 shadow-sm`} 
+                  className={`border-l-[4px] ${borderColors[type]} ${bgColors[type]} ${bgColorsDark[type]} group/details overflow-hidden rounded-r-md transition-all duration-200 shadow-sm ${className || ''}`} 
                   open={isOpen} 
                   {...props} 
               >
@@ -1224,7 +1817,7 @@ export default function App() {
             </summary>
         );
     },
-    details: ({ node, children, ...props }: any) => {
+    details: ({ node, className, children, ...props }: any) => {
         const childrenArray = React.Children.toArray(children);
         const summaryIndex = childrenArray.findIndex((child: any) => 
             child && typeof child === 'object' && 
@@ -1241,16 +1834,16 @@ export default function App() {
 
         return (
            <div className="relative group not-prose my-6">
-              <div className="absolute top-2 right-2 flex items-center gap-1 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
+              <div className="absolute top-3 right-3 flex items-center gap-1 z-10 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-200">
                 <button 
                   onClick={() => startLine && endLine ? convertToLuoguDetails(startLine, endLine) : null}
-                  className="bg-blue-600/90 text-white px-2 py-1 rounded text-xs shadow hover:bg-blue-700 transition"
+                  className="flex items-center gap-1 bg-blue-600/90 text-white px-2 py-1 rounded text-[10px] md:text-xs shadow hover:bg-blue-700 transition"
                   title="Convert to Luogu Details"
                 >
-                  To Luogu
+                   <ListCollapse size={12} /> <span className="hidden sm:inline">To Luogu</span>
                 </button>
               </div>
-              <details className="border border-gray-200 dark:border-[#333] rounded-xl shadow-sm group/details bg-white dark:bg-[#1A1A1A] overflow-hidden transition-all duration-200" {...props}>
+              <details className={`border border-gray-200 dark:border-[#333] rounded-xl shadow-sm group/details bg-white dark:bg-[#1A1A1A] overflow-hidden transition-all duration-200 ${className || ''}`} {...props}>
                   {summary || (
                       <summary className="px-5 py-3.5 font-bold cursor-pointer select-none border-b border-transparent group-open/details:border-gray-200 dark:group-open/details:border-[#333] hover:bg-gray-50 dark:hover:bg-[#222] transition-colors [&::-webkit-details-marker]:hidden flex justify-between items-center">
                           <div className="flex-1 m-0 text-gray-500 dark:text-gray-400">Details</div>
@@ -1318,7 +1911,7 @@ export default function App() {
               <div 
                 key={file.name}
                 onClick={() => setActiveFileIndex(index)}
-                className={`px-4 flex items-center gap-2 border-r h-full text-xs cursor-pointer select-none transition-all ${
+                className={`px-4 flex items-center gap-2 border-r h-full text-xs cursor-pointer select-none transition-all group/tab ${
                   index === activeFileIndex 
                     ? (isDark ? 'bg-[#1E1E1E] border-[#333] border-t-2 border-t-blue-500 font-medium text-[#D4D4D4]' : 'bg-gray-50 border-gray-200 border-t-2 border-t-blue-600 font-semibold text-gray-900') 
                     : (isDark ? 'text-gray-500 hover:bg-[#252525] border-[#333]' : 'text-gray-500 hover:bg-gray-100 border-gray-200')
@@ -1326,6 +1919,15 @@ export default function App() {
               >
                 <Type size={14} className={index === activeFileIndex ? (isDark ? "text-blue-400" : "text-blue-600") : "text-gray-500"} />
                 {file.name}
+                {index === activeFileIndex && (
+                  <button 
+                    onClick={(e) => openRenameFileDialog(e, index)}
+                    className={`opacity-0 group-hover/tab:opacity-100 transition-opacity p-1 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                    title="Rename File"
+                  >
+                    <Edit2 size={12} />
+                  </button>
+                )}
               </div>
             ))}
           </nav>
@@ -1354,7 +1956,13 @@ export default function App() {
               <Monitor size={14} />
             </button>
           </div>
-
+          <button 
+            onClick={() => setShowSettingsDialog(true)}
+            className={`p-1.5 rounded-lg transition-colors ${isDark ? 'hover:bg-[#333] text-gray-400 hover:text-white' : 'hover:bg-gray-100 text-gray-500 hover:text-gray-900'}`}
+            title="Settings"
+          >
+            <Settings size={18} />
+          </button>
           <div className="relative" ref={fileMenuRef}>
             <button 
               onClick={() => setShowFileMenu(!showFileMenu)}
@@ -1369,7 +1977,7 @@ export default function App() {
               <div className={`absolute top-full right-0 mt-1 w-48 rounded-lg shadow-xl border z-50 overflow-hidden ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}>
                 <div className="flex flex-col py-1">
                   <button 
-                    onClick={handleNewFile}
+                    onClick={openNewFileDialog}
                     className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${isDark ? 'hover:bg-[#333] text-[#D4D4D4]' : 'hover:bg-gray-100 text-gray-800'}`}
                   >
                     <Plus size={14} className={isDark ? "text-gray-400" : "text-gray-500"} />
@@ -1399,6 +2007,27 @@ export default function App() {
                   >
                     <Download size={14} className="text-indigo-500" />
                     PDF Document
+                  </button>
+                  <button 
+                    onClick={() => { handlePublishToLuogu(); setShowFileMenu(false); }}
+                    className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${isDark ? 'hover:bg-[#333] text-[#D4D4D4]' : 'hover:bg-gray-100 text-gray-800'}`}
+                  >
+                    <div className="w-[14px] flex justify-center"><span className="text-[#3498db] font-bold text-[11px] leading-none">P</span></div>
+                    Publish to Luogu
+                  </button>
+                  <button 
+                    onClick={() => { handlePublishToCnblogs(); setShowFileMenu(false); }}
+                    className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${isDark ? 'hover:bg-[#333] text-[#D4D4D4]' : 'hover:bg-gray-100 text-gray-800'}`}
+                  >
+                    <div className="w-[14px] flex justify-center"><span className="text-orange-500 font-bold text-[11px] leading-none">C</span></div>
+                    Publish to CNBlogs
+                  </button>
+                  <button 
+                    onClick={() => { handleImportFromLuogu(); setShowFileMenu(false); }}
+                    className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 transition-colors ${isDark ? 'hover:bg-[#333] text-[#D4D4D4]' : 'hover:bg-gray-100 text-gray-800'}`}
+                  >
+                    <div className="w-[14px] flex justify-center"><span className="text-[#2ecc71] font-bold text-[11px] leading-none">I</span></div>
+                    Import from Luogu
                   </button>
                 </div>
               </div>
@@ -1441,9 +2070,9 @@ export default function App() {
                       <ListCollapse size={14} />
                     </button>
                     {showConvertMenu && (
-                      <div className={`fixed top-[72px] left-28 md:absolute md:top-full md:left-auto md:right-0 mt-1 w-[180px] z-[60]`}>
+                      <div className={`fixed top-[72px] right-2 md:absolute md:top-full md:left-0 md:right-auto mt-1 w-max z-[60]`}>
                          <div className={`p-2 rounded-lg shadow-xl border ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}>
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-1 w-[200px]">
                                <button onClick={() => { convertAllDetailsToLuogu(); setShowConvertMenu(false); }} className={`text-left text-xs px-2 py-1.5 rounded transition ${isDark ? 'hover:bg-[#333] text-[#D4D4D4]' : 'hover:bg-gray-100 text-gray-800'}`}>All to Luogu Details (:::)</button>
                                <button onClick={() => { convertAllDetailsToStandard(); setShowConvertMenu(false); }} className={`text-left text-xs px-2 py-1.5 rounded transition ${isDark ? 'hover:bg-[#333] text-[#D4D4D4]' : 'hover:bg-gray-100 text-gray-800'}`}>All to Standard Details</button>
                             </div>
@@ -1529,6 +2158,9 @@ export default function App() {
                   onChange={handleContentChange}
                   onScroll={handleEditorScroll}
                   onKeyDown={handleKeyDown}
+                  onKeyUp={handleKeyUp}
+                  onClick={() => { snippetStateRef.current.active = false; checkAutocomplete(); }}
+                  onBlur={() => setTimeout(() => setAcState(s => ({ ...s, visible: false })), 150)}
                   isDark={isDark}
                   showKeyboard={showKeyboard}
                 />
@@ -1539,6 +2171,29 @@ export default function App() {
                 >
                   <MirrorComponent lines={deferredContentLines} />
                 </div>
+                {acState.visible && acState.matches.length > 0 && (
+                  <div 
+                    className={`absolute z-50 rounded-lg shadow-2xl border overflow-hidden max-h-48 flex flex-col ${isDark ? 'bg-[#1E1E1E] border-[#333]' : 'bg-white border-gray-200'}`}
+                    style={{ top: acState.top, left: acState.left }}
+                  >
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                      {acState.matches.map((match, i) => (
+                        <div 
+                          key={match.prefix}
+                          onMouseDown={(e) => { e.preventDefault(); applySnippet(match); }}
+                          className={`px-3 py-1.5 text-xs cursor-pointer flex justify-between gap-4 transition-colors ${
+                            i === acState.selectedIndex 
+                              ? (isDark ? 'bg-blue-600 text-white' : 'bg-blue-600 text-white')
+                              : (isDark ? 'hover:bg-[#333] text-[#D4D4D4]' : 'hover:bg-gray-100 text-gray-800')
+                          }`}
+                        >
+                          <span className="font-bold font-mono">{match.prefix}</span>
+                          <span className={`opacity-70 truncate max-w-[150px]`}>{match.description}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -1598,21 +2253,31 @@ export default function App() {
       </div>
 
       {/* Footer Status Bar */}
-      <footer className="hidden md:flex h-6 bg-[#007ACC] text-white items-center px-3 justify-between text-[11px] font-medium shrink-0 print:hidden">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1">
+      <footer className="hidden md:flex h-6 bg-[#007ACC] text-white items-center px-4 justify-between text-[11px] font-medium shrink-0 print:hidden">
+        <div className="flex items-center gap-5">
+          <div className="flex items-center gap-1.5 cursor-pointer hover:bg-white/20 px-1 py-0.5 rounded transition">
              <Type size={12} />
-             Main*
+             {activeFile.name}
           </div>
-          <div>UTF-8</div>
+          <div className="flex items-center gap-1 cursor-default opacity-90">
+             UTF-8
+          </div>
         </div>
-        <div className="flex items-center gap-4 h-full">
-          <div>Markdown</div>
-          <div className="flex items-center gap-1">
-             <span className="opacity-80">Characters:</span> {activeFile.content.length}
+        <div className="flex items-center gap-5 h-full">
+          <div className="opacity-90">Markdown</div>
+          <div className="flex items-center gap-4 border-l border-white/20 pl-4 h-3/4">
+             <div className="flex items-center gap-1.5">
+                <span className="opacity-70">Words:</span> {activeFile.content.split(/\s+/).filter(w => w.length > 0).length}
+             </div>
+             <div className="flex items-center gap-1.5">
+                <span className="opacity-70">Chars:</span> {activeFile.content.length}
+             </div>
+             <div className="flex items-center gap-1.5" title="Estimated reading time">
+                <span className="opacity-70">Time:</span> {Math.max(1, Math.ceil(activeFile.content.trim().split(/\s+/).filter(w => w.length > 0).length / 225))} min
+             </div>
           </div>
-          <div className="bg-white/20 px-2 flex items-center h-full">
-             PREVIEW SYNCED
+          <div className="bg-white/20 px-3 flex items-center h-full text-[10px] font-bold tracking-wider">
+             SYNCED
           </div>
         </div>
       </footer>
@@ -1625,6 +2290,186 @@ export default function App() {
           onSave={saveTable} 
           isDark={isDark} 
         />
+      )}
+
+      {showSettingsDialog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-0 sm:p-6 lg:p-12 bg-black/50 backdrop-blur-sm" onMouseDown={(e) => {
+          if (e.target === e.currentTarget) setShowSettingsDialog(false);
+        }}>
+          <div className={`w-full h-full sm:h-[85vh] sm:max-w-5xl flex flex-col sm:flex-row sm:rounded-lg shadow-2xl overflow-hidden ${isDark ? 'bg-[#1E1E1E] text-gray-300' : 'bg-white text-gray-700'}`}>
+            {/* Sidebar */}
+            <div className={`w-full sm:w-56 shrink-0 flex flex-col p-2 border-b sm:border-b-0 sm:border-r ${isDark ? 'border-[#333] bg-[#252526]' : 'border-gray-200 bg-slate-50'}`}>
+              <div className="px-4 py-3 sm:mb-2 flex justify-between items-center">
+                 <h2 className={`text-sm font-semibold flex items-center gap-2 ${isDark ? 'text-gray-200' : 'text-gray-900'}`}>
+                   <Settings size={16} />
+                   Settings
+                 </h2>
+                 <button onClick={() => setShowSettingsDialog(false)} className="p-1.5 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/10" title="Close Settings"><X size={16}/></button>
+              </div>
+              <div className="flex flex-row overflow-x-auto sm:flex-col sm:overflow-x-visible items-center sm:items-stretch gap-1 px-2 pb-2 sm:pb-0 sm:space-y-1 custom-scrollbar-hidden whitespace-nowrap scrollbar-none">
+                 <div className={`hidden sm:block text-[10px] font-bold uppercase tracking-wider mb-1 mt-3 px-2 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Integrations</div>
+                 <button onClick={() => setSettingsTab('luogu')} className={`px-3 py-1.5 text-xs sm:text-sm rounded transition-colors ${settingsTab === 'luogu' ? (isDark ? 'bg-[#37373D] text-white' : 'bg-[#E4E6F1] text-gray-900 font-medium') : (isDark ? 'hover:bg-[#2A2D2E]' : 'hover:bg-gray-200/50')}`}>Luogu API</button>
+                 <button onClick={() => setSettingsTab('cnblogs')} className={`px-3 py-1.5 text-xs sm:text-sm rounded transition-colors ${settingsTab === 'cnblogs' ? (isDark ? 'bg-[#37373D] text-white' : 'bg-[#E4E6F1] text-gray-900 font-medium') : (isDark ? 'hover:bg-[#2A2D2E]' : 'hover:bg-gray-200/50')}`}>CNBlogs</button>
+                 <div className={`hidden sm:block text-[10px] font-bold uppercase tracking-wider mb-1 mt-5 px-2 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Editor</div>
+                 <button onClick={() => setSettingsTab('snippets')} className={`px-3 py-1.5 text-xs sm:text-sm rounded transition-colors ${settingsTab === 'snippets' ? (isDark ? 'bg-[#37373D] text-white' : 'bg-[#E4E6F1] text-gray-900 font-medium') : (isDark ? 'hover:bg-[#2A2D2E]' : 'hover:bg-gray-200/50')}`}>User Snippets</button>
+              </div>
+            </div>
+            
+            {/* Main Content Area */}
+            <div className="flex-1 flex flex-col min-w-0">
+              <div className={`hidden sm:flex justify-end p-4 ${isDark ? '' : ''}`}>
+                 <button onClick={() => setShowSettingsDialog(false)} className={`p-1.5 rounded-lg transition-colors ${isDark ? 'hover:bg-white/10 text-gray-400 hover:text-white' : 'hover:bg-black/5 text-gray-500 hover:text-gray-900'}`} title="Close Settings"><X size={18}/></button>
+              </div>
+              <div className="flex-1 p-4 sm:p-8 overflow-y-auto custom-scrollbar">
+                {settingsTab === 'luogu' && (
+                  <div className="max-w-2xl">
+                    <h3 className={`text-lg font-semibold mb-6 ${isDark ? 'text-gray-200' : 'text-gray-900'}`}>Luogu Integration</h3>
+                    <div className="space-y-6">
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>_uid</label>
+                        <input
+                           type="password"
+                           value={luoguUid}
+                           onChange={(e) => {
+                             setLuoguUid(e.target.value.trim());
+                             localStorage.setItem('luogu_uid', e.target.value.trim());
+                           }}
+                           className={`w-full max-w-md px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#3C3C3C] border-transparent text-white focus:border-[#007ACC] focus:bg-[#1E1E1E]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#007ACC]'}`}
+                           placeholder="e.g. 123456"
+                        />
+                        <p className="text-xs mt-2 opacity-70">Your Luogu user ID. Extracted from your browser cookies.</p>
+                      </div>
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>__client_id</label>
+                        <input
+                           type="password"
+                           value={luoguClientId}
+                           onChange={(e) => {
+                             setLuoguClientId(e.target.value.trim());
+                             localStorage.setItem('luogu_client_id', e.target.value.trim());
+                           }}
+                           className={`w-full max-w-md px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#3C3C3C] border-transparent text-white focus:border-[#007ACC] focus:bg-[#1E1E1E]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#007ACC]'}`}
+                           placeholder="e.g. abcdef1234567890"
+                        />
+                        <p className="text-xs mt-2 opacity-70">Your Luogu client ID. Keep this secure.</p>
+                      </div>
+                      <div className={`p-4 rounded-lg mt-8 ${isDark ? 'bg-[#2A2D2E]' : 'bg-[#F3F3F3]'}`}>
+                         <p className="text-xs opacity-80 leading-relaxed">Keys are stored locally in your browser and are securely relayed through the backend proxy. Do not share your client id with anyone.</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {settingsTab === 'cnblogs' && (
+                  <div className="max-w-2xl">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+                      <h3 className={`text-lg font-semibold ${isDark ? 'text-gray-200' : 'text-gray-900'}`}>CNBlogs Integration</h3>
+                      <button 
+                        onClick={checkCnblogsApi}
+                        className={`w-full sm:w-auto text-center px-4 py-1.5 text-sm font-medium rounded transition-colors ${isDark ? 'bg-[#37373D] hover:bg-[#4D4D4D] text-white' : 'bg-blue-50 text-blue-700 hover:bg-blue-100'}`}
+                      >
+                        Verify Connection
+                      </button>
+                    </div>
+                    <div className="space-y-6">
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Cookie</label>
+                        <textarea
+                           value={cnblogsCookie}
+                           onChange={(e) => {
+                             setCnblogsCookie(e.target.value.trim());
+                             localStorage.setItem('cnblogs_cookie', e.target.value.trim());
+                           }}
+                           className={`w-full px-3 py-2 text-sm border rounded outline-none transition-colors min-h-[120px] resize-y custom-scrollbar ${isDark ? 'bg-[#3C3C3C] border-transparent text-white focus:border-[#007ACC] focus:bg-[#1E1E1E]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#007ACC]'}`}
+                           placeholder="Paste your full CNBlogs cookie here..."
+                        />
+                        <p className="text-xs mt-2 opacity-70">Copy your full request cookie from a logged-in CNBlogs session (e.g., from Network tab in DevTools).</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {settingsTab === 'snippets' && (
+                  <div className="max-w-4xl">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+                      <h3 className={`text-lg font-semibold ${isDark ? 'text-gray-200' : 'text-gray-900'}`}>User Snippets</h3>
+                      <button 
+                        onClick={() => setSnippets(prev => [...prev, { prefix: '', body: '', description: '' }])}
+                        className={`w-full sm:w-auto flex items-center justify-center gap-2 px-3 py-1.5 text-sm font-medium rounded transition-colors ${isDark ? 'bg-[#007ACC] hover:bg-[#005999] text-white' : 'bg-[#007ACC] hover:bg-[#005999] text-white'}`}
+                      >
+                        <Plus size={14} /> Add Snippet
+                      </button>
+                    </div>
+                    <p className="text-xs mb-6 opacity-70">Configure custom markdown snippets. When you type the prefix in the editor, the snippet will be expanded.</p>
+                    
+                    <div className="space-y-4">
+                      {snippets.map((snippet, idx) => (
+                        <div key={idx} className={`p-4 rounded-lg relative group transition-colors ${isDark ? 'bg-[#252526]' : 'bg-[#F3F3F3]'}`}>
+                           <button 
+                             onClick={() => {
+                               const ns = snippets.filter((_, i) => i !== idx);
+                               setSnippets(ns);
+                               localStorage.setItem('markdown_snippets', JSON.stringify(ns));
+                             }}
+                             className={`absolute top-4 right-4 transition-colors p-1.5 rounded-lg ${isDark ? 'text-gray-400 hover:text-red-400 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 bg-[#3C3C3C]/40 sm:bg-transparent' : 'text-gray-500 hover:text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 bg-gray-100 sm:bg-transparent'}`}
+                             title="Delete Snippet"
+                           >
+                             <Trash2 size={16} />
+                           </button>
+                           
+                           <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 mb-4 pr-0 sm:pr-8">
+                             <div className="flex-1">
+                               <label className="block text-[10px] font-bold uppercase tracking-wider mb-1 opacity-70">Prefix</label>
+                               <input 
+                                 placeholder="e.g. op"  
+                                 value={snippet.prefix}
+                                 onChange={e => {
+                                   const ns = [...snippets]; ns[idx].prefix = e.target.value; setSnippets(ns);
+                                   localStorage.setItem('markdown_snippets', JSON.stringify(ns));
+                                 }}
+                                 className={`w-full px-3 py-1.5 text-sm border rounded outline-none ${isDark ? 'bg-[#3C3C3C] border-transparent text-white focus:border-[#007ACC] focus:bg-[#1E1E1E]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#007ACC]'}`}
+                               />
+                             </div>
+                             <div className="flex-[2]">
+                               <label className="block text-[10px] font-bold uppercase tracking-wider mb-1 opacity-70">Description</label>
+                               <input 
+                                 placeholder="Brief description..." 
+                                 value={snippet.description}
+                                 onChange={e => {
+                                   const ns = [...snippets]; ns[idx].description = e.target.value; setSnippets(ns);
+                                   localStorage.setItem('markdown_snippets', JSON.stringify(ns));
+                                 }}
+                                 className={`w-full px-3 py-1.5 text-sm border rounded outline-none ${isDark ? 'bg-[#3C3C3C] border-transparent text-white focus:border-[#007ACC] focus:bg-[#1E1E1E]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#007ACC]'}`}
+                               />
+                             </div>
+                           </div>
+                           
+                           <div>
+                             <label className="block text-[10px] font-bold uppercase tracking-wider mb-1 opacity-70">Body</label>
+                             <textarea 
+                               placeholder="Snippet content (use {1:placeholder} for tab stops)" 
+                               value={snippet.body}
+                               onChange={e => {
+                                 const ns = [...snippets]; ns[idx].body = e.target.value; setSnippets(ns);
+                                 localStorage.setItem('markdown_snippets', JSON.stringify(ns));
+                               }}
+                               className={`w-full px-3 py-2 text-sm font-mono border rounded outline-none resize-y min-h-[80px] custom-scrollbar ${isDark ? 'bg-[#1E1E1E] border-transparent text-white focus:border-[#007ACC]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#007ACC]'}`}
+                             />
+                           </div>
+                        </div>
+                      ))}
+                      {snippets.length === 0 && (
+                        <div className={`text-center py-12 rounded-lg border border-dashed ${isDark ? 'border-[#444] text-gray-500' : 'border-gray-300 text-gray-400'}`}>
+                          <p className="text-sm">No snippets configured. Click "Add Snippet" to create one.</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {showSaveDialog && (
@@ -1669,6 +2514,375 @@ export default function App() {
         </div>
       )}
 
+      {showCnblogsPublishDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onMouseDown={(e) => {
+          if (e.target === e.currentTarget && !isPublishingCnblogs) setShowCnblogsPublishDialog(false);
+        }}>
+          <div className={`w-full max-w-sm rounded-xl shadow-2xl p-6 ${isDark ? 'bg-[#1E1E1E] text-white' : 'bg-white text-gray-900'}`}>
+            <h3 className="text-lg font-bold flex items-center gap-2 text-orange-500 mb-2">
+              <Send size={20} />
+              Publish to CNBlogs
+            </h3>
+            <p className={`text-xs mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              Publish current markdown to your CNBlogs account via CNBlogs Private API.
+            </p>
+            {(!cnblogsCookie) ? (
+               <div className="mb-4 p-3 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-400 text-xs">
+                 Please configure your CNBlogs Cookie in <strong>Settings</strong> first.
+               </div>
+            ) : (
+               <div className="mb-4 space-y-3 max-h-[50vh] overflow-y-auto px-1 custom-scrollbar">
+                 <div>
+                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Post Title</label>
+                   <input
+                     type="text"
+                     value={publishTitle}
+                     onChange={e => setPublishTitle(e.target.value)}
+                     className={`w-full px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#333] border-[#444] text-white focus:border-orange-500' : 'bg-white border-gray-300 text-gray-900 focus:border-orange-500'}`}
+                   />
+                 </div>
+                 
+                 <div>
+                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Post ID (optional, for updating)</label>
+                   <input
+                     type="text"
+                     value={cnblogsPostId}
+                     onChange={e => setCnblogsPostId(e.target.value)}
+                     className={`w-full px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#333] border-[#444] text-white focus:border-orange-500' : 'bg-white border-gray-300 text-gray-900 focus:border-orange-500'}`}
+                     placeholder="Leave empty for new post"
+                   />
+                 </div>
+
+                 <div className="flex flex-col gap-2">
+                   <div className="flex items-center justify-between">
+                     <label className={`text-xs font-semibold flex items-center gap-2 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>
+                       合集
+                     </label>
+                     <button
+                       onClick={fetchCnblogsTerms}
+                       disabled={isFetchingCnblogsTerms}
+                       className="text-[10px] bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900/30 dark:text-blue-400 px-2 py-0.5 rounded transition-colors"
+                     >
+                       {isFetchingCnblogsTerms ? 'Fetching...' : 'Fetch Existing'}
+                     </button>
+                   </div>
+                   
+                   {cnblogsAvailableCollections && cnblogsAvailableCollections.length > 0 && (
+                     <div className="flex flex-col gap-1 mb-1">
+                       <span className="text-[10px] text-gray-500">合集 (Collections):</span>
+                       <div className="flex flex-wrap gap-1.5">
+                         {cnblogsAvailableCollections.map((cat, idx) => {
+                           const catTitle = cat.title || cat.description || String(cat);
+                           const displayTitle = catTitle.replace(/^\[合集\]/i, '').trim() || catTitle;
+                           const isSelected = cnblogsCollections.includes(catTitle);
+                           return (
+                             <span
+                               key={`cat-${idx}`}
+                               onClick={() => {
+                                 let arr = cnblogsCollections.split(',').map(s=>s.trim()).filter(Boolean);
+                                 if (isSelected) arr = arr.filter(c => c !== catTitle);
+                                 else arr.push(catTitle);
+                                 setCnblogsCollections(arr.join(', '));
+                               }}
+                               className={`text-[10px] px-2 py-1 rounded cursor-pointer transition-colors ${isSelected ? (isDark ? 'bg-orange-500 text-white' : 'bg-orange-500 text-white') : (isDark ? 'bg-[#333] text-gray-300 hover:bg-[#444]' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}`}
+                             >
+                               {displayTitle}
+                             </span>
+                           );
+                         })}
+                       </div>
+                     </div>
+                   )}
+                   
+                   <input
+                     type="text"
+                     value={cnblogsCollections}
+                     onChange={e => setCnblogsCollections(e.target.value)}
+                     className={`w-full px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#333] border-[#444] text-white focus:border-orange-500' : 'bg-white border-gray-300 text-gray-900 focus:border-orange-500'}`}
+                     placeholder="e.g. [合集]Tech"
+                   />
+                 </div>
+                 
+                 <div className="flex flex-col gap-2">
+                   <div className="flex items-center justify-between">
+                     <label className={`text-xs font-semibold ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Tags</label>
+                   </div>
+                   
+                   {cnblogsAvailableTags && cnblogsAvailableTags.length > 0 && (
+                     <div className="flex flex-wrap gap-1.5 mb-1">
+                       {cnblogsAvailableTags.map((tagObj, idx) => {
+                         const tagTitle = tagObj.name || String(tagObj);
+                         const isSelected = cnblogsTags.includes(tagTitle);
+                         return (
+                           <span
+                             key={idx}
+                             onClick={() => {
+                               let arr = cnblogsTags.split(',').map(s=>s.trim()).filter(Boolean);
+                               if (isSelected) arr = arr.filter(c => c !== tagTitle);
+                               else arr.push(tagTitle);
+                               setCnblogsTags(arr.join(', '));
+                             }}
+                             className={`text-[10px] px-2 py-1 rounded cursor-pointer transition-colors ${isSelected ? (isDark ? 'bg-orange-500 text-white' : 'bg-orange-500 text-white') : (isDark ? 'bg-[#333] text-gray-300 hover:bg-[#444]' : 'bg-gray-100 text-gray-600 hover:bg-gray-200')}`}
+                           >
+                             {tagTitle}
+                           </span>
+                         );
+                       })}
+                     </div>
+                   )}
+                   
+                   <div className="relative">
+                     <input
+                       type="text"
+                       value={cnblogsTags}
+                       onChange={e => setCnblogsTags(e.target.value)}
+                       className={`w-full px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#333] border-[#444] text-white focus:border-orange-500' : 'bg-white border-gray-300 text-gray-900 focus:border-orange-500'}`}
+                       placeholder="e.g. tutorial, tools (comma separated)"
+                     />
+                     {(() => {
+                       const parts = cnblogsTags.split(',');
+                       const lastSegment = parts[parts.length - 1].trim().toLowerCase();
+                       if (!lastSegment) return null;
+                       const matches = cnblogsAvailableTags
+                         .map(t => typeof t === 'string' ? t : t.name)
+                         .filter(t => t && String(t).toLowerCase().includes(lastSegment) && String(t).toLowerCase() !== lastSegment);
+                       if (matches.length === 0) return null;
+                       return (
+                         <div className={`absolute left-0 right-0 top-full mt-1 max-h-40 overflow-y-auto z-10 border rounded shadow-lg ${isDark ? 'bg-[#2A2A2A] border-[#444]' : 'bg-white border-gray-200'}`}>
+                           {matches.map((match, idx) => (
+                              <div
+                                key={`match-${idx}`}
+                                className={`px-3 py-2 text-sm cursor-pointer transition-colors ${isDark ? 'hover:bg-[#333] text-gray-200' : 'hover:bg-gray-100 text-gray-800'}`}
+                                onClick={() => {
+                                  parts[parts.length - 1] = ' ' + match;
+                                  setCnblogsTags(parts.join(',').trim() + ', ');
+                                }}
+                              >
+                                {match}
+                              </div>
+                           ))}
+                         </div>
+                       );
+                     })()}
+                   </div>
+                 </div>
+
+                 <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                   <input 
+                     type="checkbox" 
+                     className="rounded border-gray-300 accent-orange-500" 
+                     checked={cnblogsIsDraft}
+                     onChange={e => setCnblogsIsDraft(e.target.checked)}
+                   />
+                   <span className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>Save as Draft</span>
+                 </label>
+               </div>
+            )}
+            
+            <div className="flex justify-end gap-2 pt-2">
+              <button 
+                onClick={() => setShowCnblogsPublishDialog(false)}
+                disabled={isPublishingCnblogs}
+                className={`px-4 py-2 text-sm rounded transition-colors ${isDark ? 'hover:bg-[#333] text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}
+              >
+                Cancel
+              </button>
+              {cnblogsCookie && (
+               <button 
+                 onClick={executeCnblogsPublish}
+                 disabled={isPublishingCnblogs || !publishTitle.trim()}
+                 className={`px-4 py-2 text-sm rounded bg-orange-500 text-white hover:bg-orange-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2`}
+               >
+                 {isPublishingCnblogs ? 'Publishing...' : 'Publish'}
+               </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLuoguPublishDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onMouseDown={(e) => {
+          if (e.target === e.currentTarget && !isPublishingToLuogu) setShowLuoguPublishDialog(false);
+        }}>
+          <div className={`w-full max-w-sm rounded-xl shadow-2xl p-6 ${isDark ? 'bg-[#1E1E1E] text-white' : 'bg-white text-gray-900'}`}>
+            <h3 className="text-lg font-bold flex items-center gap-2 text-[#3498db] mb-2">
+              <div className="w-5 h-5 flex items-center justify-center bg-[#3498db]/10 rounded"><span className="text-[12px]">P</span></div>
+              Publish to Luogu
+            </h3>
+            <p className={`text-xs mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              Publish current markdown to your Luogu account automatically.
+            </p>
+            {(!luoguUid || !luoguClientId) ? (
+               <div className="mb-4 p-3 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-400 text-xs">
+                 Please configure your Luogu cookies in <strong>Settings</strong> first.
+               </div>
+            ) : (
+               <div className="mb-4 space-y-3 max-h-[50vh] overflow-y-auto px-1">
+                 <div>
+                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Title</label>
+                   <input
+                      type="text"
+                      value={publishTitle}
+                      onChange={(e) => setPublishTitle(e.target.value)}
+                      className={`w-full px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#333] border-[#444] text-white focus:border-[#3498db]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#3498db]'}`}
+                      placeholder="Article Title..."
+                   />
+                 </div>
+                 <div>
+                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Category</label>
+                   <select
+                     value={publishCategory}
+                     onChange={(e) => setPublishCategory(Number(e.target.value))}
+                     className={`w-full px-3 py-2 text-sm border rounded outline-none appearance-none transition-colors ${isDark ? 'bg-[#333] border-[#444] text-white focus:border-[#3498db]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#3498db]'}`}
+                   >
+                     {LUOGU_CATEGORIES.map(cat => (
+                       <option key={cat.id} value={cat.id}>{cat.name}</option>
+                     ))}
+                   </select>
+                 </div>
+                 <div>
+                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Solution For (Problem ID)</label>
+                   <input
+                      type="text"
+                      value={publishSolutionFor}
+                      onChange={(e) => setPublishSolutionFor(e.target.value.trim().toUpperCase())}
+                      className={`w-full px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#333] border-[#444] text-white focus:border-[#3498db]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#3498db]'}`}
+                      placeholder="e.g. P1001 (Optional)"
+                   />
+                 </div>
+                 <div className="flex gap-4 pt-2">
+                   <label className={`flex items-center gap-2 cursor-pointer text-sm font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                     <input 
+                       type="checkbox" 
+                       checked={publishIsPublic} 
+                       onChange={(e) => setPublishIsPublic(e.target.checked)}
+                       className="rounded text-blue-600 focus:ring-[#3498db] w-4 h-4 cursor-pointer"
+                     />
+                     Public
+                   </label>
+                 </div>
+                 <div>
+                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Top Weight</label>
+                   <input
+                      type="number"
+                      value={publishTop}
+                      onChange={(e) => setPublishTop(Number(e.target.value))}
+                      className={`w-full px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#333] border-[#444] text-white focus:border-[#3498db]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#3498db]'}`}
+                   />
+                 </div>
+                 {publishLid && (
+                     <div className="pt-2">
+                       <span className="text-xs bg-black/10 dark:bg-white/10 px-2 py-1 rounded text-orange-600 dark:text-orange-400 font-medium">Updating Article: {publishLid}</span>
+                     </div>
+                 )}
+               </div>
+            )}
+            <div className="flex justify-end gap-3 mt-6">
+              <button 
+                onClick={() => setShowLuoguPublishDialog(false)}
+                disabled={isPublishingToLuogu}
+                className={`px-4 py-2 text-sm font-medium rounded transition disabled:opacity-50 ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={executeLuoguPublish}
+                disabled={isPublishingToLuogu || !luoguUid.trim() || !luoguClientId.trim()}
+                className="px-4 py-2 bg-[#3498db] hover:bg-[#2980b9] text-white text-sm font-medium rounded shadow transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {isPublishingToLuogu ? 'Publishing...' : 'Publish'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showLuoguImportDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onMouseDown={(e) => {
+          if (e.target === e.currentTarget && !isImportingLuogu) setShowLuoguImportDialog(false);
+        }}>
+          <div className={`w-full max-w-sm rounded-xl shadow-2xl p-6 ${isDark ? 'bg-[#1E1E1E] text-white' : 'bg-white text-gray-900'}`}>
+            <h3 className="text-lg font-bold flex items-center gap-2 text-[#2ecc71] mb-2">
+              <div className="w-5 h-5 flex items-center justify-center bg-[#2ecc71]/10 rounded"><span className="text-[12px]">I</span></div>
+              Import from Luogu
+            </h3>
+            <p className={`text-xs mb-4 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+              Import and edit an existing article from your Luogu account.
+            </p>
+            {(!luoguUid || !luoguClientId) ? (
+               <div className="mb-4 p-3 rounded bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-400 text-xs">
+                 Please configure your Luogu cookies in <strong>Settings</strong> first.
+               </div>
+            ) : (
+               <div className="mb-4 space-y-3">
+                 <div>
+                   <label className={`block text-xs font-semibold mb-1 ${isDark ? 'text-gray-400' : 'text-gray-600'}`}>Article ID (lid)</label>
+                   <input
+                      type="text"
+                      value={importLid}
+                      onChange={(e) => setImportLid(e.target.value.trim())}
+                      className={`w-full px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#333] border-[#444] text-white focus:border-[#2ecc71]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#2ecc71]'}`}
+                      placeholder="e.g. jx1z9k3l"
+                   />
+                 </div>
+               </div>
+            )}
+            <div className="flex justify-end gap-3 mt-6">
+              <button 
+                onClick={() => setShowLuoguImportDialog(false)}
+                disabled={isImportingLuogu}
+                className={`px-4 py-2 text-sm font-medium rounded transition disabled:opacity-50 ${isDark ? 'hover:bg-white/10 text-gray-300' : 'hover:bg-gray-100 text-gray-600'}`}
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={executeLuoguImport}
+                disabled={isImportingLuogu || !importLid.trim() || !luoguUid.trim() || !luoguClientId.trim()}
+                className="px-4 py-2 bg-[#2ecc71] hover:bg-[#27ae60] text-white text-sm font-medium rounded shadow transition disabled:opacity-50 flex items-center gap-2"
+              >
+                {isImportingLuogu ? 'Importing...' : 'Import'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* File Action Dialog (New / Rename) */}
+      {fileActionDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[200]">
+          <div className={`w-full max-w-sm rounded-xl shadow-2xl ${isDark ? 'bg-[#1E1E1E] text-[#D4D4D4]' : 'bg-white text-gray-900'} overflow-hidden`}>
+            <div className={`p-4 border-b flex items-center justify-between ${isDark ? 'border-[#333]' : 'border-gray-200'}`}>
+               <h3 className="font-bold flex items-center gap-2">
+                 <Type size={18} />
+                 {fileActionDialog.type === 'new' ? 'New File' : 'Rename File'}
+               </h3>
+               <button onClick={() => setFileActionDialog(null)} className="p-1 rounded opacity-70 hover:opacity-100"><X size={16}/></button>
+            </div>
+            <div className="p-4">
+              <input 
+                autoFocus
+                type="text" 
+                value={fileNameInput} 
+                onChange={e => setFileNameInput(e.target.value)} 
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleFileNameSubmit();
+                  if (e.key === 'Escape') setFileActionDialog(null);
+                }}
+                className={`w-full px-3 py-2 text-sm border rounded outline-none transition-colors ${isDark ? 'bg-[#121212] border-[#444] text-white focus:border-[#3498db]' : 'bg-white border-gray-300 text-gray-900 focus:border-[#3498db]'}`}
+                placeholder="Filename.md"
+              />
+            </div>
+            <div className={`px-4 py-3 border-t flex justify-end gap-2 ${isDark ? 'bg-[#1A1A1A] border-[#333]' : 'bg-gray-50 border-gray-200'}`}>
+              <button onClick={() => setFileActionDialog(null)} className={`px-4 py-2 text-xs font-semibold rounded transition ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}>Cancel</button>
+              <button onClick={handleFileNameSubmit} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-xs font-bold rounded shadow transition">
+                {fileActionDialog.type === 'new' ? 'Create' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Sidebar */}
       <div 
         className={`fixed inset-0 z-[100] md:hidden transition-opacity duration-300 ${showMobileSidebar ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}
@@ -1692,24 +2906,33 @@ export default function App() {
           
           <div className="flex-1 overflow-y-auto py-2">
             {files.map((file, index) => (
-              <button
+              <div
                 key={file.name}
                 onClick={() => {
                   setActiveFileIndex(index);
                   setShowMobileSidebar(false);
                 }}
-                className={`w-full px-4 py-3 flex items-center gap-3 text-sm transition-colors text-left ${
+                className={`w-full px-4 py-3 flex items-center gap-3 text-sm transition-colors text-left group/mobiletab ${
                   index === activeFileIndex 
                     ? (isDark ? 'bg-[#1E1E1E] text-blue-400 font-medium' : 'bg-blue-50 text-blue-600 font-semibold')
-                    : (isDark ? 'text-gray-400 hover:bg-[#1A1A1A]' : 'text-gray-600 hover:bg-gray-50')
+                    : (isDark ? 'text-gray-400 hover:bg-[#1A1A1A]' : 'text-gray-600 hover:bg-gray-50 cursor-pointer')
                 }`}
               >
                 <Type size={16} className={index === activeFileIndex ? (isDark ? "text-blue-400" : "text-blue-600") : "text-gray-400"} />
                 <span className="flex-1 truncate">{file.name}</span>
                 {index === activeFileIndex && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500 rounded-full" />
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={(e) => openRenameFileDialog(e, index)}
+                      className={`p-1.5 rounded hover:bg-black/10 dark:hover:bg-white/10`}
+                      title="Rename File"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 rounded-full" />
+                  </div>
                 )}
-              </button>
+              </div>
             ))}
           </div>
         </div>
